@@ -1,0 +1,1806 @@
+import React, { useEffect, useState, useMemo } from 'react';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  googleProvider, 
+  auth, 
+  db, 
+  collection, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  addDoc, 
+  setDoc,
+  updateDoc,
+  doc,
+  getDoc,
+  getDocs,
+  where,
+  OperationType, 
+  handleFirestoreError,
+  FirebaseUser,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword
+} from './firebase';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell 
+} from 'recharts';
+import { 
+  Package, 
+  Plus, 
+  Minus, 
+  History, 
+  LayoutDashboard, 
+  AlertTriangle, 
+  LogOut,
+  Search,
+  Filter,
+  Calendar,
+  User,
+  Tag,
+  Stethoscope,
+  ShoppingBag,
+  ChevronRight,
+  TrendingDown,
+  TrendingUp,
+  Clock,
+  CheckCircle2,
+  Sparkles,
+  XCircle,
+  BarChart3,
+  Box,
+  Truck,
+  Sun,
+  Moon,
+  List,
+  Grid,
+  FileText,
+  Send,
+  Download,
+  Eye,
+  EyeOff,
+  Trash2,
+  Edit2
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { format, isPast, isBefore, addDays, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { cn } from './lib/utils';
+import { Category, InventoryItem, Batch, Movement, UserProfile } from './types';
+
+import Markdown from 'react-markdown';
+import { generateInventoryInsights, generateCustomReport } from "./lib/gemini";
+
+// --- Components ---
+
+const Button = ({ 
+  children, 
+  onClick, 
+  variant = 'primary', 
+  className,
+  disabled,
+  type = 'button'
+}: { 
+  children: React.ReactNode; 
+  onClick?: () => void; 
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  className?: string;
+  disabled?: boolean;
+  type?: 'button' | 'submit' | 'reset';
+}) => {
+  const variants = {
+    primary: 'bg-primary text-white hover:bg-accent shadow-sm transition-all',
+    secondary: 'bg-secondary text-white hover:opacity-90 shadow-sm transition-all',
+    outline: 'border border-border-base bg-surface text-text-base hover:bg-bg-main transition-all',
+    ghost: 'text-text-muted hover:text-text-base hover:bg-bg-main transition-all',
+    danger: 'bg-rose-600 text-white hover:opacity-90 transition-all',
+  };
+
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-sm font-bold text-sm uppercase tracking-wide active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all',
+        variants[variant],
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+};
+
+const Card = ({ children, className, ...props }: React.ComponentProps<'div'>) => (
+  <div {...props} className={cn('bg-surface border border-border-base rounded-lg overflow-hidden shadow-sm transition-colors duration-200', className)}>
+    {children}
+  </div>
+);
+
+const Input = ({ 
+  label, 
+  id, 
+  ...props 
+}: { 
+  label?: string; 
+  id: string; 
+} & React.InputHTMLAttributes<HTMLInputElement>) => (
+  <div className="space-y-1">
+    {label && <label htmlFor={id} className="text-sm font-medium text-text-base">{label}</label>}
+    <input
+      id={id}
+      {...props}
+      className="w-full px-3 py-2 bg-bg-main border border-border-base rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-text-muted text-text-base"
+    />
+  </div>
+);
+
+const Select = ({ 
+  label, 
+  id, 
+  children, 
+  ...props 
+}: { 
+  label?: string; 
+  id: string; 
+  children: React.ReactNode; 
+} & React.SelectHTMLAttributes<HTMLSelectElement>) => (
+  <div className="space-y-1">
+    {label && <label htmlFor={id} className="text-sm font-medium text-text-base">{label}</label>}
+    <select
+      id={id}
+      {...props}
+      className="w-full px-3 py-2 bg-bg-main border border-border-base rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center] text-text-base"
+    >
+      {children}
+    </select>
+  </div>
+);
+
+const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) => (
+  <AnimatePresence>
+    {isOpen && (
+      <>
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-secondary/60 backdrop-blur-sm z-50 px-4 flex items-center justify-center"
+        >
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-surface rounded-sm w-full max-w-lg shadow-2xl overflow-hidden border border-border-base"
+          >
+            <div className="px-6 py-4 border-b border-border-base flex items-center justify-between">
+              <h3 className="text-lg font-black text-text-base uppercase tracking-tight italic">{title}</h3>
+              <button onClick={onClose} className="p-2 hover:bg-bg-main rounded-sm transition-colors text-text-muted">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-6 overflow-y-auto max-h-[80vh]">
+              {children}
+            </div>
+          </motion.div>
+        </motion.div>
+      </>
+    )}
+  </AnimatePresence>
+);
+
+// --- Main App Logic ---
+
+export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return localStorage.getItem('theme') as 'light' | 'dark' || 'light';
+  });
+
+  // Theme effect
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'stock' | 'movements' | 'reports'>('dashboard');
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [movements, setMovements] = useState<Movement[]>([]);
+
+  const topConsumedItems = useMemo(() => {
+    const consumption: Record<string, number> = {};
+    movements
+        .filter(m => m.type === 'SAIDA')
+        .forEach(m => {
+            consumption[m.itemId] = (consumption[m.itemId] || 0) + m.quantity;
+        });
+
+    return Object.entries(consumption)
+        .map(([itemId, quantity]) => ({
+            name: items.find(i => i.id === itemId)?.name || 'Desconhecido',
+            quantity
+        }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 5);
+  }, [movements, items]);
+
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [selectedItemForMovement, setSelectedItemForMovement] = useState<InventoryItem | null>(null);
+  const [movementType, setMovementType] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
+  const [selectedItemForIndication, setSelectedItemForIndication] = useState<InventoryItem | null>(null);
+  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
+
+  const [aiInsight, setAiInsight] = useState<string>("");
+  const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+
+  const handleDeleteMovement = async (movement: Movement) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta movimentação? O estoque será ajustado automaticamente.')) return;
+    
+    try {
+      // 1. Reverse Batch quantity
+      const batchesRef = collection(db, 'batches');
+      const q = query(batchesRef, where('itemId', '==', movement.itemId), where('lotNumber', '==', movement.lotNumber));
+      const batchSnap = await getDocs(q);
+      
+      if (!batchSnap.empty) {
+        const batchDocId = batchSnap.docs[0].id;
+        const currentQty = batchSnap.docs[0].data().quantity;
+        // If it was ENTRADA, we subtract. If SAIDA, we add back.
+        const reversedQty = movement.type === 'ENTRADA' ? currentQty - movement.quantity : currentQty + movement.quantity;
+        
+        await updateDoc(doc(db, 'batches', batchDocId), { quantity: reversedQty });
+      }
+
+      // 2. Reverse Item Total
+      const itemRef = doc(db, 'items', movement.itemId);
+      const itemSnap = await getDoc(itemRef);
+      if (itemSnap.exists()) {
+        const itemData = itemSnap.data() as InventoryItem;
+        const reversedTotal = movement.type === 'ENTRADA' ? (itemData.currentQuantity || 0) - movement.quantity : (itemData.currentQuantity || 0) + movement.quantity;
+        await updateDoc(itemRef, { currentQuantity: reversedTotal });
+      }
+
+      // 3. Delete movement
+      await deleteDoc(doc(db, 'movements', movement.id));
+      alert('Movimentação excluída com sucesso!');
+    } catch (e) {
+      alert('Erro ao excluir movimentação: ' + (e instanceof Error ? e.message : String(e)));
+      handleFirestoreError(e, OperationType.DELETE, 'movements');
+    }
+  };
+
+  const handleEditMovement = (movement: Movement) => {
+    setEditingMovement(movement);
+    setMovementType(movement.type);
+    setIsMovementModalOpen(true);
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este item do catálogo? Esta ação não pode ser desfeita.')) return;
+    try {
+      await deleteDoc(doc(db, 'items', itemId));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'items');
+    }
+  };
+
+  const handleEditItem = (item: InventoryItem) => {
+    setEditingItem(item);
+    setIsItemModalOpen(true);
+  };
+
+  const fetchAiInsight = async () => {
+    if (items.length === 0) return;
+    setIsLoadingInsight(true);
+    const insight = await generateInventoryInsights(items, movements, categories);
+    setAiInsight(insight);
+    setIsLoadingInsight(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'dashboard' && !aiInsight && items.length > 0) {
+      fetchAiInsight();
+    }
+  }, [activeTab, items]);
+
+  // --- Auth & Data Listeners ---
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      try {
+        setUser(u);
+        if (u) {
+          // Simple profile auto-creation for first login
+          const userRef = doc(db, 'users', u.uid);
+          const userSnap = await getDoc(userRef);
+          if (!userSnap.exists()) {
+            const newProfile: Omit<UserProfile, 'id'> = {
+              name: u.displayName || 'Sem Nome',
+              email: u.email || '',
+              role: u.email === 'carlosgabriel.camppos@gmail.com' ? 'admin' : 'user'
+            };
+            await setDoc(userRef, newProfile).catch(e => handleFirestoreError(e, OperationType.WRITE, 'users'));
+            setProfile({ id: u.uid, ...newProfile });
+          } else {
+            setProfile({ id: u.uid, ...userSnap.data() as Omit<UserProfile, 'id'> });
+          }
+        } else {
+          setProfile(null);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar perfil do usuário:", err);
+      } finally {
+        setLoading(false);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubCategories = onSnapshot(collection(db, 'categories'), 
+      (snap) => setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category))),
+      (e) => handleFirestoreError(e, OperationType.LIST, 'categories')
+    );
+
+    const unsubItems = onSnapshot(collection(db, 'items'), 
+      (snap) => setItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem))),
+      (e) => handleFirestoreError(e, OperationType.LIST, 'items')
+    );
+
+    const unsubMovements = onSnapshot(query(collection(db, 'movements'), orderBy('timestamp', 'desc')), 
+      (snap) => setMovements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Movement)).slice(0, 100)),
+      (e) => handleFirestoreError(e, OperationType.LIST, 'movements')
+    );
+
+    const unsubBatches = onSnapshot(collection(db, 'batches'), 
+      (snap) => setBatches(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Batch))),
+      (e) => handleFirestoreError(e, OperationType.LIST, 'batches')
+    );
+
+    return () => {
+      unsubCategories();
+      unsubItems();
+      unsubMovements();
+      unsubBatches();
+    };
+  }, [user]);
+
+  // Special listener for all batches (Global alert system)
+  useEffect(() => {
+    if (!user) return;
+    // In many cases, you want to see ALL batches to find what's expiring.
+    // Collection group is best here.
+    // We'll simulate by fetching top level batches in the UI logic if we change structure.
+    // For now, I'll put batches in items/{itemId}/batches but I'll query them.
+    // I will add a separate batches collection for simplicity in alerts.
+  }, [user]);
+
+
+  // --- Actions ---
+
+  const handleCustomLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    if (username === 'ambulatoriosocmg2' && password === 'shopee@2026') {
+      try {
+        await signInWithEmailAndPassword(auth, 'ambulatoriosocmg2@shopee.com', 'shopee@2026');
+      } catch (err: any) {
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+          try {
+            await createUserWithEmailAndPassword(auth, 'ambulatoriosocmg2@shopee.com', 'shopee@2026');
+          } catch (createErr: any) {
+            setLoginError('Erro interno ao registrar no banco de dados. ' + createErr.message);
+          }
+        } else {
+          setLoginError('Erro de conexão: ' + err.message);
+        }
+      }
+    } else {
+      setLoginError('Credenciais inválidas.');
+    }
+  };
+  const handleLogout = () => signOut(auth);
+
+  const registerMovement = async (data: { 
+    itemId: string; 
+    type: 'ENTRADA' | 'SAIDA'; 
+    quantity: number; 
+    lotNumber: string; 
+    expirationDate: string; 
+    notes?: string; 
+  }) => {
+    if (!user || !profile) return;
+
+    try {
+      // 1. If editing, reverse the OLD impact first
+      if (editingMovement) {
+        // Reverse Batch quantity
+        const batchesRef = collection(db, 'batches');
+        const qOld = query(batchesRef, where('itemId', '==', editingMovement.itemId), where('lotNumber', '==', editingMovement.lotNumber));
+        const batchSnapOld = await getDocs(qOld);
+        if (!batchSnapOld.empty) {
+          const batchDocId = batchSnapOld.docs[0].id;
+          const currentQty = batchSnapOld.docs[0].data().quantity;
+          const reversedQty = editingMovement.type === 'ENTRADA' ? currentQty - editingMovement.quantity : currentQty + editingMovement.quantity;
+          await updateDoc(doc(db, 'batches', batchDocId), { quantity: reversedQty });
+        }
+
+        // Reverse Item Total
+        const itemRefOld = doc(db, 'items', editingMovement.itemId);
+        const itemSnapOld = await getDoc(itemRefOld);
+        if (itemSnapOld.exists()) {
+          const itemData = itemSnapOld.data() as InventoryItem;
+          const reversedTotal = editingMovement.type === 'ENTRADA' ? (itemData.currentQuantity || 0) - editingMovement.quantity : (itemData.currentQuantity || 0) + editingMovement.quantity;
+          await updateDoc(itemRefOld, { currentQuantity: reversedTotal });
+        }
+      }
+
+      // 2. Update or Create movement log
+      if (editingMovement) {
+        await updateDoc(doc(db, 'movements', editingMovement.id), {
+          ...data,
+          responsibleName: profile.name,
+          responsibleUid: user.uid,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        await addDoc(collection(db, 'movements'), {
+          ...data,
+          responsibleName: profile.name,
+          responsibleUid: user.uid,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // 3. Apply NEW impact to Batch
+      const batchesRef = collection(db, 'batches');
+      const q = query(batchesRef, where('itemId', '==', data.itemId), where('lotNumber', '==', data.lotNumber));
+      const batchSnap = await getDocs(q);
+      const item = items.find(i => i.id === data.itemId);
+
+      if (!batchSnap.empty) {
+        const batchDocId = batchSnap.docs[0].id;
+        // Refetch to get most recent quantity after potential reversal
+        const freshBatchSnap = await getDoc(doc(db, 'batches', batchDocId));
+        const existingQty = freshBatchSnap.data()?.quantity || 0;
+        const newQty = data.type === 'ENTRADA' ? existingQty + data.quantity : existingQty - data.quantity;
+        
+        if (newQty < 0) throw new Error('Saldo insuficiente no lote selecionado.');
+        
+        await updateDoc(doc(db, 'batches', batchDocId), {
+          quantity: newQty,
+          expirationDate: data.expirationDate
+        });
+      } else {
+        if (data.type === 'SAIDA') throw new Error('Lote não encontrado para retirada.');
+        await addDoc(batchesRef, {
+          itemId: data.itemId,
+          itemName: item?.name || 'Item',
+          lotNumber: data.lotNumber,
+          expirationDate: data.expirationDate,
+          quantity: data.quantity
+        });
+      }
+
+      // 4. Apply NEW impact to Item Total
+      const itemRef = doc(db, 'items', data.itemId);
+      const freshItemSnap = await getDoc(itemRef);
+      if (freshItemSnap.exists()) {
+        const itemData = freshItemSnap.data() as InventoryItem;
+        const newTotal = data.type === 'ENTRADA' ? (itemData.currentQuantity || 0) + data.quantity : (itemData.currentQuantity || 0) - data.quantity;
+        await updateDoc(itemRef, { currentQuantity: newTotal });
+      }
+
+      setIsMovementModalOpen(false);
+      setEditingMovement(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao processar movimentação');
+      handleFirestoreError(e, editingMovement ? OperationType.UPDATE : OperationType.WRITE, 'movements');
+    }
+  };
+
+  // --- Derived State ---
+
+  const expiringBatches = useMemo(() => {
+    return batches
+      .filter(b => b.quantity > 0)
+      .map(b => ({
+        ...b,
+        status: isPast(parseISO(b.expirationDate)) 
+          ? 'expired' 
+          : isBefore(parseISO(b.expirationDate), addDays(new Date(), 30)) 
+            ? 'soon' 
+            : 'ok'
+      }))
+      .filter(b => b.status !== 'ok')
+      .sort((a, b) => parseISO(a.expirationDate).getTime() - parseISO(b.expirationDate).getTime());
+  }, [batches]);
+
+  const stats = useMemo(() => ({
+    totalItems: items.length,
+    lowStock: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length,
+    expiringSoon: expiringBatches.length,
+    recentMovements: movements.length
+  }), [items, movements, expiringBatches]);
+
+  // --- View Components ---
+
+  const Dashboard = () => (
+    <div className="space-y-4">
+      {/* AI Assistant Card */}
+      <Card className="border-none shadow-xl bg-gradient-to-br from-[#EE4D2D] via-[#f53d2d] to-[#ff4d00] text-white overflow-hidden relative group">
+        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
+          <Sparkles className="w-32 h-32 rotate-12" />
+        </div>
+        <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
+            <img 
+              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+              alt="Shopito" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Assistant</span>
+              {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
+            </div>
+            <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insights do seu Ambulatório</h3>
+            <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+                  <span className="text-xs uppercase font-black opacity-50 ml-2">Shopito está analisando os dados...</span>
+                </div>
+              ) : (
+                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para receber recomendações inteligentes baseadas no seu estoque atual!"}</p>
+              )}
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={fetchAiInsight}
+            disabled={isLoadingInsight}
+            className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
+          >
+            Atualizar Insights
+          </Button>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total no Catálogo', value: stats.totalItems, icon: Box, color: 'text-primary', bg: 'bg-primary/5', border: 'border-primary/10' },
+          { label: 'Alertas de Validade', value: stats.expiringSoon, icon: Clock, color: 'text-accent', bg: 'bg-accent/5', border: 'border-accent/10' },
+          { label: 'Itens Vencidos', value: '00', icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/5', border: 'border-rose-500/10' },
+          { label: 'Fluxo Recente', value: stats.recentMovements, icon: History, color: 'text-secondary', bg: 'bg-secondary/5', border: 'border-secondary/10' },
+        ].map((stat, i) => (
+          <Card key={i} className={cn("p-4 border shadow-sm hover:shadow-md transition-all group", stat.border)}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
+                <p className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
+              </div>
+              <div className={cn("p-2 rounded-xl transition-all group-hover:scale-110", stat.bg)}>
+                <stat.icon className={cn("w-5 h-5", stat.color)} />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center gap-1.5 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
+                <div className="w-1 h-1 rounded-full bg-current" />
+                <span className="text-[9px] font-bold uppercase tracking-tight">Atualizado agora</span>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 shadow-sm border-border-base overflow-hidden">
+          <div className="px-6 py-4 border-b border-border-base bg-surface/50 flex items-center justify-between">
+            <h3 className="text-sm font-black text-secondary flex items-center gap-2 uppercase italic tracking-tight">
+                <Box className="w-4 h-4 text-primary" />
+                Panorama do Estoque
+                <span className="text-[10px] text-text-muted font-bold not-italic ml-2 lowercase">({items.length} itens totais)</span>
+            </h3>
+            <Button variant="ghost" className="text-[9px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 hover:text-primary" onClick={() => setActiveTab('stock')}>
+              Abrir Inventário
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+                <thead className="bg-bg-main/50 text-text-muted font-bold uppercase tracking-widest">
+                    <tr>
+                        <th className="px-6 py-3 border-b border-border-base">Insumo</th>
+                        <th className="px-6 py-3 border-b border-border-base">Categoria</th>
+                        <th className="px-6 py-3 border-b border-border-base text-center">Saldo</th>
+                        <th className="px-6 py-3 border-b border-border-base">Status</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-border-base">
+                    {items.slice(0, 6).map(item => {
+                        const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                        return (
+                            <tr key={item.id} className="hover:bg-bg-main/40 transition-colors group">
+                                <td className="px-6 py-4">
+                                  <p className="font-bold text-text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
+                                  <p className="text-[9px] text-text-muted font-mono uppercase mt-0.5">ID: {item.id.slice(0,8)}</p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-[10px] font-bold text-text-muted uppercase bg-bg-main px-2 py-0.5 rounded-sm">
+                                    {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  <span className={cn("text-sm font-black tracking-tight", lowStock ? "text-rose-600" : "text-primary")}>
+                                    {item.currentQuantity}
+                                  </span>
+                                  <span className="text-[10px] text-text-muted font-bold ml-1 uppercase">un</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className={cn(
+                                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[9px] font-black uppercase tracking-widest border",
+                                        lowStock 
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' 
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                                    )}>
+                                        <div className={cn("w-1.5 h-1.5 rounded-full", lowStock ? "bg-rose-600 animate-pulse" : "bg-emerald-600")} />
+                                        {lowStock ? 'Reposição Necessária' : 'Em Conformidade'}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-4">
+            <Card>
+                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4 text-rose-500" />
+                        Mais Consumidos
+                    </h3>
+                </div>
+                <div className="p-4 h-[240px]">
+                    {topConsumedItems.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={topConsumedItems} layout="vertical" margin={{ left: -10, right: 30, top: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                                <XAxis type="number" hide />
+                                <YAxis 
+                                    dataKey="name" 
+                                    type="category" 
+                                    hide={false} 
+                                    width={80} 
+                                    fontSize={9} 
+                                    fontWeight="bold"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    stroke={theme === 'dark' ? '#888' : '#666'}
+                                />
+                                <Tooltip 
+                                    cursor={{ fill: 'transparent' }}
+                                    contentStyle={{ 
+                                        backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                                        fontSize: '10px',
+                                        padding: '4px 8px',
+                                        color: theme === 'dark' ? '#fff' : '#000'
+                                    }}
+                                />
+                                <Bar dataKey="quantity" radius={[0, 2, 2, 0]} barSize={14}>
+                                    {topConsumedItems.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d00' : '#ff4d0080'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
+                             <TrendingUp className="w-8 h-8 opacity-20" />
+                             <p className="text-[9px] uppercase font-bold tracking-widest">Sem dados</p>
+                        </div>
+                    )}
+                </div>
+            </Card>
+
+            <Card>
+                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                         <AlertTriangle className="w-4 h-4 text-accent" />
+                         Alertas Validade
+                    </h3>
+                </div>
+                <div className="p-4 space-y-3">
+                    {expiringBatches.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-4 text-center">
+                            <CheckCircle2 className="w-8 h-8 text-success/30 mb-2" />
+                            <p className="text-[10px] font-bold text-success uppercase tracking-widest">Tudo em dia!</p>
+                        </div>
+                    ) : expiringBatches.map(batch => (
+                        <div key={batch.id} className="flex items-center gap-3 p-2 bg-rose-50 dark:bg-rose-500/5 rounded-sm border border-rose-100 dark:border-rose-500/10">
+                            <div className="bg-rose-500 text-white p-1 rounded-sm">
+                                <Clock className="w-3 h-3" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 leading-none uppercase tracking-tight">{items.find(i => i.id === batch.itemId)?.name}</p>
+                                <p className="text-[9px] text-rose-500/70 font-bold mt-1">Lote: {batch.lotNumber} • Vence em: {format(new Date(batch.expirationDate), 'dd/MM/yy')}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
+      </div>
+    </div>
+  );
+  const ItemsView = () => {
+    const [searchQuery, setSearchQuery] = useState('');
+    
+    const filteredItems = useMemo(() => {
+      return items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    }, [items, searchQuery]);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-surface p-4 rounded-sm shadow-sm border border-border-base">
+          <div className="relative w-full md:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input 
+              placeholder="Pesquisar catálogo..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base"
+            />
+          </div>
+          <Button className="w-full md:w-auto h-11" onClick={() => { setEditingItem(null); setIsItemModalOpen(true); }}>
+            <Plus className="w-5 h-5" /> Novo Cadastro
+          </Button>
+        </div>
+
+        <Card className="overflow-hidden border-border-base">
+           <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                 <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
+                    <tr>
+                       <th className="px-5 py-3 border-b border-border-base w-[10%]">Status</th>
+                       <th className="px-5 py-3 border-b border-border-base text-left">Insumo</th>
+                       <th className="px-5 py-3 border-b border-border-base">Categoria</th>
+                       <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
+                       <th className="px-5 py-3 border-b border-border-base text-center">Unidade</th>
+                       <th className="px-5 py-3 border-b border-border-base text-center">Início</th>
+                       <th className="px-5 py-3 border-b border-border-base text-center">Mín. Alerta</th>
+                       <th className="px-5 py-3 border-b border-border-base text-right">Ação</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-border-base">
+                    {filteredItems.map(item => (
+                       <tr key={item.id} className="hover:bg-bg-main/50 transition-colors">
+                          <td className="px-5 py-3">
+                             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                          </td>
+                          <td className="px-5 py-3 font-black text-text-base uppercase italic">{item.name}</td>
+                          <td className="px-5 py-3">
+                             <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
+                                {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                             </span>
+                          </td>
+                          <td className="px-5 py-3 text-text-muted uppercase font-bold">{item.supplier || '-'}</td>
+                          <td className="px-5 py-3 text-center text-text-muted font-bold uppercase text-[10px]">{item.unit || 'UN'}</td>
+                          <td className="px-5 py-3 text-center text-text-muted font-mono">0</td>
+                          <td className="px-5 py-3 text-center text-rose-500 font-black">{item.minQuantity || 5}</td>
+                          <td className="px-5 py-3 text-right">
+                             <div className="flex items-center justify-end gap-3">
+                               {item.indication && (
+                                 <button
+                                   onClick={() => setSelectedItemForIndication(item)}
+                                   title="Ver indicação"
+                                   className="text-text-muted hover:text-primary transition-colors"
+                                 >
+                                   <Eye className="w-4 h-4" />
+                                 </button>
+                               )}
+                               <button 
+                                 onClick={() => handleEditItem(item)}
+                                 title="Editar item"
+                                 className="text-primary hover:text-accent transition-colors"
+                               >
+                                 <Edit2 className="w-4 h-4" />
+                               </button>
+                               <button 
+                                 onClick={() => handleDeleteItem(item.id)}
+                                 title="Excluir item"
+                                 className="text-rose-500 hover:text-rose-600 transition-colors"
+                               >
+                                 <Trash2 className="w-4 h-4" />
+                               </button>
+                             </div>
+                          </td>
+                       </tr>
+                    ))}
+                 </tbody>
+              </table>
+           </div>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <Card className="p-6 border-2 border-primary/5 bg-bg-main/30">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-black text-text-base uppercase tracking-tight italic text-xs flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-primary" />
+                  Gerenciar Categorias
+                </h3>
+              </div>
+              <div className="space-y-1.5 mb-4">
+                {categories.map(cat => (
+                  <div key={cat.id} className="flex items-center gap-2 p-2 bg-surface border border-border-base rounded-sm text-text-base">
+                    <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
+                    <span className="text-[10px] font-bold text-text-base uppercase truncate flex-1">{cat.name}</span>
+                  </div>
+                ))}
+              </div>
+              <Button variant="outline" className="w-full text-[9px] h-8 font-black uppercase" onClick={() => setIsCategoryModalOpen(true)}>
+                + Adicionar Categoria
+              </Button>
+           </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const StockView = () => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [viewType, setViewType] = useState<'grid' | 'table'>('table');
+    const [filter, setFilter] = useState<'all' | 'low'>('all');
+    
+    const filteredItems = useMemo(() => {
+      let result = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      if (filter === 'low') {
+        result = result.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
+      }
+      return result;
+    }, [items, searchQuery, filter]);
+
+    const handleDownloadCSV = (type: 'all' | 'critical') => {
+      const targetItems = type === 'all' 
+        ? items 
+        : items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
+
+      const headers = ['ID', 'Item', 'Categoria', 'Fornecedor', 'Estoque Atual', 'Estoque Minimo', 'Status'];
+      const rows = targetItems.map(item => [
+        item.id,
+        item.name,
+        categories.find(c => c.id === item.categoryId)?.name || 'Geral',
+        item.supplier || 'N/A',
+        item.currentQuantity,
+        item.minQuantity || 5,
+        (item.currentQuantity || 0) <= (item.minQuantity || 5) ? 'CRITICO' : 'NORMAL'
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map(row => row.join(','))
+        .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `estoque_${type}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Header Stats for Stock Page */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+           <Card className="p-4 bg-primary/5 border-primary/10">
+              <div className="flex items-center gap-3">
+                 <div className="bg-primary p-2 rounded-sm text-white"><Box className="w-4 h-4" /></div>
+                 <div>
+                    <p className="text-[10px] font-black uppercase text-text-muted">Insumos Cadastrados</p>
+                    <p className="text-xl font-black text-primary italic">{items.length}</p>
+                 </div>
+              </div>
+           </Card>
+           <Card className="p-4 bg-rose-500/5 border-rose-500/10">
+              <div className="flex items-center gap-3">
+                 <div className="bg-rose-500 p-2 rounded-sm text-white"><TrendingDown className="w-4 h-4" /></div>
+                 <div>
+                    <p className="text-[10px] font-black uppercase text-text-muted">Abaixo do Mínimo</p>
+                    <p className="text-xl font-black text-rose-500 italic">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</p>
+                 </div>
+              </div>
+           </Card>
+
+           <Card className="p-4 bg-surface border-border-base col-span-1 md:col-span-2 flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-[10px] font-black uppercase text-text-muted tracking-widest">Relatórios de Inventário</p>
+                <p className="text-[9px] font-bold text-text-muted/60 uppercase">Exportação em formato CSV para conferência externa</p>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  className="h-9 text-[9px] font-black uppercase tracking-widest border-rose-500/30 text-rose-600 hover:bg-rose-500 hover:text-white"
+                  onClick={() => handleDownloadCSV('critical')}
+                >
+                  <Download className="w-3 h-3 mr-2" /> Críticos
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="h-9 text-[9px] font-black uppercase tracking-widest"
+                  onClick={() => handleDownloadCSV('all')}
+                >
+                  <Download className="w-3 h-3 mr-2" /> Completo
+                </Button>
+              </div>
+           </Card>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+          {/* Main Items Section */}
+          <div className="xl:col-span-3 space-y-4">
+            <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-surface p-3 rounded-sm shadow-sm border border-border-base">
+              <div className="relative w-full md:max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <input 
+                  placeholder="Pesquisar estoque..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
+                />
+              </div>
+              
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="flex border border-border-base rounded-sm overflow-hidden bg-bg-main p-0.5">
+                   <button 
+                    onClick={() => setViewType('table')}
+                    className={cn("p-1.5 rounded-sm transition-all", viewType === 'table' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
+                   >
+                     <List className="w-4 h-4" />
+                   </button>
+                   <button 
+                    onClick={() => setViewType('grid')}
+                    className={cn("p-1.5 rounded-sm transition-all", viewType === 'grid' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
+                   >
+                     <Grid className="w-4 h-4" />
+                   </button>
+                </div>
+
+                <div className="h-8 w-[1px] bg-border-base mx-1" />
+
+                <Select 
+                  id="filter" 
+                  value={filter} 
+                  onChange={(e) => setFilter(e.target.value as any)}
+                  className="h-9 py-0 text-[10px] font-black uppercase tracking-widest w-40"
+                >
+                   <option value="all">TODOS OS ITENS</option>
+                   <option value="low">BAIXO ESTOQUE</option>
+                </Select>
+              </div>
+            </div>
+
+            {viewType === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+                {filteredItems.length === 0 ? (
+                  <div className="col-span-full py-20 text-center bg-surface border border-dashed border-border-base rounded-sm">
+                    <Box className="w-12 h-12 text-text-muted mx-auto mb-4 opacity-20" />
+                    <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Nenhum item em estoque</p>
+                  </div>
+                ) : filteredItems.map(item => (
+                  <Card key={item.id} className="group hover:border-primary transition-all h-full flex flex-col">
+                    <div className="p-4 flex-1 text-text-base">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[9px] font-black text-primary uppercase tracking-[0.1em] mb-1 truncate">
+                            {categories.find(c => c.id === item.categoryId)?.name || 'Sem Categoria'}
+                          </p>
+                          <h4 className="text-sm font-black text-text-base group-hover:text-primary transition-colors leading-tight mb-1 truncate">
+                            {item.name}
+                          </h4>
+                          <p className="text-[10px] text-text-muted font-bold flex items-center gap-1.5 uppercase">
+                            <Truck className="w-3 h-3" /> {item.supplier || 'N/A'}
+                          </p>
+                        </div>
+                        <div className={cn(
+                          "px-2 py-1 rounded-sm flex flex-col items-center justify-center min-w-[45px] border",
+                          (item.currentQuantity || 0) <= (item.minQuantity || 5) 
+                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' 
+                            : 'bg-bg-main border-border-base text-text-base'
+                        )}>
+                          <span className="text-lg font-black leading-none italic">{item.currentQuantity || 0}</span>
+                          <span className="text-[8px] uppercase font-black mt-0.5">un</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2 mt-auto pt-3 border-t border-border-base">
+                        <Button 
+                          variant="outline"
+                          className="flex-1 text-[9px] h-8 border-border-base hover:border-primary hover:text-primary" 
+                          onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                        >
+                          + Entrada
+                        </Button>
+                        <Button 
+                          variant="outline"
+                          className="flex-1 text-[9px] h-8 border-border-base hover:border-danger hover:text-danger" 
+                          onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                        >
+                          - Saída
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="overflow-hidden border-border-base">
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-left text-[11px]">
+                      <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
+                         <tr>
+                            <th className="px-5 py-3 border-b border-border-base">Insumo</th>
+                            <th className="px-5 py-3 border-b border-border-base">Categoria</th>
+                            <th className="px-5 py-3 border-b border-border-base text-center">Saldo</th>
+                            <th className="px-5 py-3 border-b border-border-base text-center">Mínimo</th>
+                            <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
+                            <th className="px-5 py-3 border-b border-border-base text-right font-black">Ações</th>
+                         </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-base">
+                         {filteredItems.map(item => {
+                            const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                            return (
+                               <tr key={item.id} className="hover:bg-bg-main/50 transition-colors">
+                                  <td className="px-5 py-3 font-black text-text-base uppercase italic">{item.name}</td>
+                                  <td className="px-5 py-3">
+                                     <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
+                                        {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                                     </span>
+                                  </td>
+                                  <td className="px-5 py-3 text-center">
+                                     <span className={cn("text-sm font-black italic", lowStock ? 'text-rose-500' : 'text-primary')}>
+                                        {item.currentQuantity || 0} un
+                                     </span>
+                                  </td>
+                                  <td className="px-5 py-3 text-center text-text-muted font-bold font-mono">
+                                     {item.minQuantity || 5}
+                                  </td>
+                                  <td className="px-5 py-3 text-text-muted uppercase font-bold text-[9px]">{item.supplier || '-'}</td>
+                                  <td className="px-5 py-3 text-right">
+                                     <div className="flex justify-end gap-1">
+                                        <button 
+                                          className="p-1.5 hover:bg-primary/10 text-primary transition-colors rounded-sm"
+                                          onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                          title="Entrada"
+                                        >
+                                           <Plus className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                          className="p-1.5 hover:bg-rose-500/10 text-rose-500 transition-colors rounded-sm"
+                                          onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                          title="Saída"
+                                        >
+                                           <Minus className="w-4 h-4" />
+                                        </button>
+                                     </div>
+                                  </td>
+                               </tr>
+                            );
+                         })}
+                      </tbody>
+                   </table>
+                 </div>
+              </Card>
+            )}
+          </div>
+
+          {/* Summary Sidebar for Stock */}
+          <div className="space-y-4">
+            <Card className="p-5 border border-border-base bg-bg-main/30">
+              <h3 className="font-black text-text-base uppercase tracking-tight italic text-[9px] mb-4 flex items-center gap-2">
+                <Tag className="w-3.5 h-3.5 text-primary" />
+                Resumo por Categoria
+              </h3>
+              <div className="space-y-1.5">
+                {categories.map(cat => {
+                  const count = items.filter(i => i.categoryId === cat.id).length;
+                  if (count === 0) return null;
+                  return (
+                    <div key={cat.id} className="flex items-center justify-between text-[10px] font-bold text-text-muted uppercase">
+                      <span>{cat.name}</span>
+                      <span className="text-primary font-black">{items.filter(i => i.categoryId === cat.id).reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)} un</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card className="p-5 bg-secondary text-white border-none shadow-xl shadow-secondary/10">
+               <div className="flex items-center gap-3 mb-3">
+                  <Box className="w-4 h-4 text-primary" />
+                  <h4 className="font-black uppercase tracking-widest text-[9px]">Análise Rápida</h4>
+               </div>
+               <div className="space-y-3">
+                  <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
+                     <span className="text-white/40 text-[9px] font-bold uppercase">Variedade</span>
+                     <span className="text-lg font-black italic">{items.length} itens</span>
+                  </div>
+                  <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
+                     <span className="text-white/40 text-[9px] font-bold uppercase">Baixo Estoque</span>
+                     <span className="text-lg font-black italic text-rose-400">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</span>
+                  </div>
+               </div>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ReportsView = () => {
+    const [query, setQuery] = useState('');
+    const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+    const [isGenerating, setIsGenerating] = useState(false);
+
+    const handleSend = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!query.trim() || isGenerating) return;
+
+      const userMsg = query;
+      setQuery('');
+      setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+      setIsGenerating(true);
+
+      const response = await generateCustomReport(userMsg, items, movements, categories);
+      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+      setIsGenerating(false);
+    };
+
+    return (
+      <div className="flex flex-col h-[calc(100vh-180px)] space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-border-base rounded-xl bg-surface/50">
+               <motion.div 
+                 initial={{ scale: 0.8, opacity: 0 }}
+                 animate={{ scale: 1, opacity: 1 }}
+                 className="relative mb-6"
+               >
+                 <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
+                 <div className="w-28 h-28 rounded-full border-4 border-primary shadow-2xl overflow-hidden relative z-10 bg-white">
+                    <img 
+                      src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+                      alt="Shopito" 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                 </div>
+               </motion.div>
+               
+               <h3 className="text-xl font-black uppercase italic text-text-base tracking-tight">Gerador de Relatórios Inteligente</h3>
+               <p className="max-w-md text-xs font-bold text-text-muted mt-2 uppercase tracking-widest leading-relaxed">
+                 Olá! Eu sou o Shopito. Me peça para gerar qualquer análise, resumo de consumo ou listas de validade do seu almoxarifado.
+               </p>
+               
+               <div className="grid grid-cols-2 gap-2 mt-8 w-full max-w-sm">
+                  {['Consumo de luvas este mês', 'Itens vencendo em 30 dias', 'Resumo por categoria', 'Maiores fornecedores'].map(s => (
+                    <button 
+                      key={s} 
+                      onClick={() => setQuery(s)}
+                      className="p-2 text-[10px] font-black uppercase text-text-muted bg-surface border border-border-base rounded-sm hover:border-primary transition-all text-left"
+                    >
+                      {s}
+                    </button>
+                  ))}
+               </div>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={cn(
+              "flex w-full mb-4",
+              m.role === 'user' ? "justify-end" : "justify-start"
+            )}>
+              <div className={cn(
+                "max-w-[85%] rounded-[4px] p-4 shadow-sm",
+                m.role === 'user' 
+                  ? "bg-primary text-white" 
+                  : "bg-surface border border-border-base text-text-base"
+              )}>
+                {m.role === 'assistant' && (
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border-base/10">
+                    <img 
+                      src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+                      className="w-5 h-5 rounded-full object-cover" 
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Shopito Assistant</span>
+                  </div>
+                )}
+                <div className={cn("text-sm prose prose-sm max-w-none dark:prose-invert", m.role === 'user' ? "text-white" : "text-text-base")}>
+                   <Markdown>{m.content}</Markdown>
+                </div>
+              </div>
+            </div>
+          ))}
+          {isGenerating && (
+            <div className="flex justify-start">
+               <div className="bg-surface border border-border-base p-4 rounded-[4px] shadow-sm flex items-center gap-3">
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                     <Sparkles className="w-4 h-4 text-primary" />
+                  </motion.div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Shopito está processando seu relatório...</span>
+               </div>
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSend} className="relative mt-auto">
+          <input 
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={isGenerating}
+            placeholder="O que você deseja saber sobre o estoque hoje?"
+            className="w-full bg-surface border border-border-base focus:border-primary rounded-sm p-4 pr-14 outline-none transition-all shadow-xl font-bold placeholder:text-text-muted/50 text-sm"
+          />
+          <button 
+            type="submit"
+            disabled={!query.trim() || isGenerating}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-white rounded-sm disabled:opacity-50 hover:bg-accent transition-all"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </form>
+      </div>
+    );
+  };
+
+  // --- Auth Guard ---
+
+  if (loading) return (
+    <div className="min-h-screen bg-bg-main flex flex-col items-center justify-center gap-6">
+      <motion.div 
+        animate={{ 
+          scale: [1, 1.1, 1],
+          rotate: [0, 5, -5, 0]
+        }} 
+        transition={{ repeat: Infinity, duration: 2 }}
+        className="relative"
+      >
+        <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full scale-150" />
+        <img 
+          src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+          alt="Shopito Mascot"
+          className="w-24 h-24 rounded-full object-cover border-4 border-primary relative z-10 shadow-2xl"
+          referrerPolicy="no-referrer"
+        />
+      </motion.div>
+      <p className="text-text-muted font-black font-sans text-xs tracking-widest uppercase italic animate-pulse">Iniciando Ambulatório Inteligente...</p>
+    </div>
+  );
+
+  if (!user) return (
+    <div className="min-h-screen bg-bg-main flex items-center justify-center p-4">
+      <Card className="max-w-md w-full p-10 text-center space-y-8 bg-surface border-border-base relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
+        <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-4 ring-8 ring-primary/5 p-1 overflow-hidden bg-bg-main shadow-inner">
+          <img 
+            src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+            alt="Shopito Mascot"
+            className="w-full h-full rounded-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        </div>
+        <div>
+          <h1 className="text-2xl font-black text-text-base uppercase italic tracking-tight leading-tight">
+            Ambulatório Inteligente <br />
+            <span className="text-primary not-italic">Shopee</span>
+          </h1>
+          <p className="text-text-muted mt-2 font-bold text-xs uppercase tracking-widest leading-loose">Bem-vindo ao sistema de gestão, Shopito!</p>
+        </div>
+        <form onSubmit={handleCustomLogin} className="space-y-4 text-left w-full">
+          {loginError && <p className="text-rose-500 text-xs font-bold text-center bg-rose-500/10 p-2 rounded-sm">{loginError}</p>}
+          <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Usuário" required />
+          <div className="relative">
+             <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" required className="pr-10" />
+             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-base p-1" tabIndex={-1}>
+               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+             </button>
+          </div>
+          <Button type="submit" className="w-full py-4 text-sm tracking-widest mt-4">
+             ENTRAR NO SISTEMA
+          </Button>
+        </form>
+        <p className="text-[10px] text-text-muted uppercase tracking-widest font-black">Área de Segurança: Insumos Ambulatoriais</p>
+      </Card>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-bg-main flex">
+      {/* Sidebar - Shopee Graphite */}
+      <nav className="w-16 md:w-[240px] bg-secondary flex flex-col fixed h-full z-10 transition-all text-white border-r border-white/5 shadow-2xl">
+        <div className="p-8 flex items-center justify-center md:justify-start gap-4">
+          <div className="w-11 h-11 rounded-xl overflow-hidden border-2 border-primary shadow-xl shadow-primary/20 shrink-0 bg-white">
+            <img 
+              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+              alt="Mascote Shopee"
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="hidden md:flex flex-col leading-none">
+            <span className="font-black text-[9px] tracking-[0.2em] text-white/40 uppercase italic mb-0.5">Ambulatório</span>
+            <span className="font-black text-lg tracking-tight text-white uppercase italic leading-none">Inteligente</span>
+            <span className="text-primary font-black text-[10px] tracking-widest uppercase">Shopee</span>
+          </div>
+        </div>
+
+        <div className="flex-1 px-4 space-y-1.5 mt-6">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'items', label: 'Catálogo', icon: Box },
+            { id: 'stock', label: 'Estoque Real', icon: ShoppingBag },
+            { id: 'movements', label: 'Movimentações', icon: History },
+            { id: 'reports', label: 'Relatórios IA', icon: FileText },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as any)}
+              className={cn(
+                "w-full flex items-center gap-3.5 px-4 py-3.5 rounded-lg transition-all group relative overflow-hidden",
+                activeTab === item.id 
+                  ? "bg-primary text-white shadow-xl shadow-primary/30" 
+                  : "text-white/50 hover:bg-white/[0.03] hover:text-white"
+              )}
+            >
+              <item.icon className={cn("w-5 h-5 shrink-0 transition-transform duration-300 group-hover:scale-110", activeTab === item.id ? "text-white" : "text-white/30 group-hover:text-white/60")} />
+              <span className="hidden md:block font-bold text-xs uppercase tracking-wider">{item.label}</span>
+              {activeTab === item.id && (
+                <motion.div 
+                  layoutId="sidebar-active"
+                  className="absolute left-0 w-1 h-6 bg-white rounded-r-full"
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6 space-y-2">
+          <button 
+            onClick={toggleTheme}
+            className="w-full h-11 flex items-center justify-center md:justify-start gap-4 px-4 text-white/40 hover:text-white bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 rounded-lg transition-all"
+          >
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            <span className="font-bold uppercase tracking-[0.1em] text-[9px] hidden md:block">Alternar Tema</span>
+          </button>
+          
+          <button 
+            onClick={handleLogout}
+            className="w-full h-11 flex items-center justify-center md:justify-start gap-4 px-4 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-lg transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="font-bold uppercase tracking-[0.1em] text-[9px] hidden md:block">Encerrar Sessão</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="ml-16 md:ml-[240px] flex-1 min-h-screen bg-bg-main relative">
+        <div className="max-w-7xl mx-auto p-4 lg:p-6">
+          <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border-base pb-4">
+            <div className="space-y-1">
+               <div className="flex items-center gap-2 mb-2">
+                 <span className="px-2 py-0.5 bg-primary/10 text-primary text-[8px] font-black uppercase tracking-[0.2em] rounded-sm">Módulo {activeTab}</span>
+               </div>
+               <h1 className="text-2xl font-black text-secondary tracking-tighter uppercase italic leading-none">
+                  {activeTab === 'dashboard' && 'Visão Geral'}
+                  {activeTab === 'items' && 'Gestão de Itens'}
+                  {activeTab === 'stock' && 'Inventário Físico'}
+                  {activeTab === 'movements' && 'Fluxo de Carga'}
+                  {activeTab === 'reports' && 'Shopito Intelligence'}
+               </h1>
+               <p className="text-text-muted font-bold text-[10px] uppercase tracking-widest pl-1">{format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              {profile && (
+                <div className="flex items-center gap-3 px-4 py-2 bg-surface border border-border-base rounded-lg shadow-sm mr-4">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-xs uppercase">
+                    {profile.name.charAt(0)}
+                  </div>
+                  <div className="hidden lg:block leading-none text-left">
+                    <p className="text-[10px] font-black text-text-base uppercase truncate max-w-[100px]">{profile.name}</p>
+                    <p className="text-[8px] font-bold text-text-muted uppercase mt-0.5 italic">{profile.role}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </header>
+
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="pb-20"
+          >
+           {activeTab === 'dashboard' && <Dashboard />}
+           {activeTab === 'items' && <ItemsView />}
+           {activeTab === 'stock' && <StockView />}
+           {activeTab === 'movements' && (
+             <div className="space-y-6">
+                <div className="flex gap-4">
+                  <Button 
+                    onClick={() => { setEditingMovement(null); setMovementType('ENTRADA'); setIsMovementModalOpen(true); }}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-4 shadow-lg shadow-emerald-500/20 font-black uppercase tracking-tight"
+                  >
+                    + Registrar Entrada
+                  </Button>
+                  <Button 
+                    onClick={() => { setEditingMovement(null); setMovementType('SAIDA'); setIsMovementModalOpen(true); }}
+                    className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-4 shadow-lg shadow-rose-500/20 font-black uppercase tracking-tight"
+                  >
+                    - Registrar Saída
+                  </Button>
+                </div>
+                <Card>
+                   <div className="p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                         <h3 className="font-bold text-text-base">Histórico de Movimentações</h3>
+                         <Filter className="w-4 h-4 text-text-muted" />
+                      </div>
+                   <div className="border border-border-base rounded-sm overflow-hidden">
+                      <table className="w-full text-left text-sm">
+                         <thead className="bg-bg-main text-text-muted uppercase tracking-tighter font-bold">
+                            <tr>
+                               <th className="px-6 py-3">Data</th>
+                               <th className="px-6 py-3">Tipo</th>
+                               <th className="px-6 py-3">Item</th>
+                               <th className="px-6 py-3">Qtd</th>
+                               <th className="px-6 py-3">Lote</th>
+                               <th className="px-6 py-3">Resp.</th>
+                               <th className="px-6 py-3 text-right">Ações</th>
+                            </tr>
+                         </thead>
+                         <tbody className="divide-y divide-border-base">
+                            {movements.map(m => (
+                               <tr key={m.id} className="hover:bg-bg-main transition-colors">
+                                  <td className="px-6 py-4 text-text-muted">{format(parseISO(m.timestamp), 'dd/MM HH:mm')}</td>
+                                  <td className="px-6 py-4">
+                                     <span className={cn(
+                                       "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                                       m.type === 'ENTRADA' ? 'bg-emerald-100/10 text-emerald-600' : 'bg-rose-100/10 text-rose-600'
+                                     )}>
+                                        {m.type}
+                                     </span>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold text-text-base">{items.find(i => i.id === m.itemId)?.name}</td>
+                                  <td className="px-6 py-4 font-black text-text-base">{m.quantity}</td>
+                                  <td className="px-6 py-4 font-mono text-[10px] text-text-muted">{m.lotNumber}</td>
+                                  <td className="px-6 py-4 text-text-muted">{m.responsibleName}</td>
+                                  <td className="px-6 py-4 text-right">
+                                     <div className="flex justify-end gap-2">
+                                        <button 
+                                          onClick={() => handleEditMovement(m)}
+                                          title="Editar movimentação"
+                                          className="p-1 hover:bg-primary/10 text-primary transition-colors rounded"
+                                        >
+                                          <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                          onClick={() => handleDeleteMovement(m)}
+                                          title="Excluir movimentação"
+                                          className="p-1 hover:bg-rose-500/10 text-rose-500 transition-colors rounded"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                     </div>
+                                  </td>
+                               </tr>
+                            ))}
+                         </tbody>
+                      </table>
+                   </div>
+                </div>
+             </Card>
+             </div>
+           )}
+           {activeTab === 'reports' && <ReportsView />}
+        </motion.div>
+      </div>
+    </main>
+
+    {/* Modals */}
+      
+      {/* Modal de Indicação */}
+      {selectedItemForIndication && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setSelectedItemForIndication(null)}
+        >
+          <div
+            className="bg-surface border border-border-base rounded-xl shadow-2xl p-6 max-w-md w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Indicação do Medicamento</p>
+                <h3 className="text-lg font-black text-text-base uppercase italic leading-tight">
+                  {selectedItemForIndication.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedItemForIndication(null)}
+                className="text-text-muted hover:text-text-base transition-colors ml-4 shrink-0"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="bg-bg-main border border-border-base rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Stethoscope className="w-4 h-4 text-primary" />
+                <span className="text-xs font-bold text-primary uppercase tracking-wider">Para que serve?</span>
+              </div>
+              <p className="text-sm text-text-base leading-relaxed">
+                {selectedItemForIndication.indication}
+              </p>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-[10px] text-text-muted">
+              <div className="bg-bg-main border border-border-base rounded px-3 py-2">
+                <span className="font-bold uppercase">Categoria:</span>{' '}
+                {categories.find(c => c.id === selectedItemForIndication.categoryId)?.name || 'Geral'}
+              </div>
+              <div className="bg-bg-main border border-border-base rounded px-3 py-2">
+                <span className="font-bold uppercase">Unidade:</span>{' '}
+                {selectedItemForIndication.unit}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Modal 
+        isOpen={isCategoryModalOpen} 
+        onClose={() => setIsCategoryModalOpen(false)} 
+        title="Gerenciar Categorias"
+      >
+        <form className="space-y-4" onSubmit={async (e) => {
+          e.preventDefault();
+          const form = e.target as HTMLFormElement;
+          const name = (form.elements.namedItem('catName') as HTMLInputElement).value;
+          await addDoc(collection(db, 'categories'), { name }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'categories'));
+          form.reset();
+        }}>
+           <Input id="catName" name="catName" label="Nova Categoria" placeholder="Ex: Medicamentos" required />
+           <Button type="submit" variant="secondary" className="w-full">Adicionar Categoria</Button>
+           <div className="space-y-2 mt-6">
+              <h4 className="text-xs font-bold text-text-muted uppercase tracking-widest">Existentes</h4>
+              {categories.map(c => (
+                <div key={c.id} className="flex justify-between items-center bg-bg-main px-3 py-2 rounded-sm border border-border-base text-text-base">
+                  <span className="text-sm font-bold uppercase italic tracking-tight">{c.name}</span>
+                </div>
+              ))}
+           </div>
+        </form>
+      </Modal>
+
+      <Modal 
+        isOpen={isItemModalOpen} 
+        onClose={() => { setIsItemModalOpen(false); setEditingItem(null); }} 
+        title={editingItem ? "Editar Item do Catálogo" : "Cadastrar Novo Item"}
+      >
+        <form className="space-y-4" onSubmit={async (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target as HTMLFormElement);
+          const indication = (formData.get('indication') as string).trim();
+          const itemData: any = {
+             name: formData.get('name') as string,
+             categoryId: formData.get('categoryId') as string,
+             supplier: formData.get('supplier') as string,
+             unit: formData.get('unit') as string,
+             minQuantity: Number(formData.get('minQty')),
+          };
+          if (indication) itemData.indication = indication;
+          
+          try {
+            if (editingItem) {
+              await updateDoc(doc(db, 'items', editingItem.id), itemData);
+            } else {
+              await addDoc(collection(db, 'items'), {
+                ...itemData,
+                currentQuantity: 0
+              });
+            }
+          } catch (e) {
+            handleFirestoreError(e, editingItem ? OperationType.UPDATE : OperationType.WRITE, 'items');
+            return;
+          }
+
+          setIsItemModalOpen(false);
+          setEditingItem(null);
+        }}>
+           <Input 
+             id="name" 
+             name="name" 
+             label="Nome do Insumo" 
+             placeholder="Ex: Gaze Estéril 7.5x7.5" 
+             defaultValue={editingItem?.name || ''}
+             required 
+           />
+           <Select 
+             id="categoryId" 
+             name="categoryId" 
+             label="Categoria" 
+             defaultValue={editingItem?.categoryId || ''}
+             required
+           >
+              <option value="">Selecione...</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+           </Select>
+           <Input 
+             id="supplier" 
+             name="supplier" 
+             label="Fornecedor Padrão" 
+             placeholder="Ex: MedSul Distribuídora" 
+             defaultValue={editingItem?.supplier || ''}
+             required 
+           />
+           
+           <div className="grid grid-cols-2 gap-4">
+             <Select 
+               id="unit" 
+               name="unit" 
+               label="Unidade de Medida" 
+               defaultValue={editingItem?.unit || ''}
+               required
+             >
+               <option value="">Selecione...</option>
+               <option value="Un">Unidade (UN)</option>
+               <option value="Cx">Caixa (CX)</option>
+               <option value="Fr">Frasco (FR)</option>
+               <option value="Pct">Pacote (PCT)</option>
+               <option value="Rl">Rolo (RL)</option>
+               <option value="Pr">Par (PR)</option>
+             </Select>
+             <Input 
+               id="minQty" 
+               name="minQty" 
+               label="Mínimo em Estoque" 
+               type="number" 
+               defaultValue={editingItem?.minQuantity?.toString() || "5"} 
+               required 
+             />
+           </div>
+
+           <div>
+             <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Indicação (Para que serve?)</label>
+             <textarea
+               id="indication"
+               name="indication"
+               rows={3}
+               placeholder="Ex: Indicado para cólicas intestinais e espasmos abdominais..."
+               defaultValue={editingItem?.indication || ''}
+               className="w-full px-3 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base resize-none"
+             />
+           </div>
+
+           <Button type="submit" variant="primary" className="w-full py-3">
+             {editingItem ? "Salvar Alterações" : "Salvar Item no Catálogo"}
+           </Button>
+        </form>
+      </Modal>
+
+      <Modal 
+        isOpen={isMovementModalOpen} 
+        onClose={() => { setIsMovementModalOpen(false); setEditingMovement(null); }} 
+        title={editingMovement 
+          ? `Editar ${editingMovement.type === 'ENTRADA' ? 'Entrada' : 'Saída'}` 
+          : (movementType === 'ENTRADA' ? "Entrada de Estoque" : "Saída de Estoque")}
+      >
+        <form className="space-y-4" onSubmit={(e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target as HTMLFormElement);
+          registerMovement({
+            itemId: formData.get('itemId') as string,
+            type: movementType,
+            quantity: Number(formData.get('qty')),
+            lotNumber: formData.get('lot') as string,
+            expirationDate: formData.get('expiry') 
+              ? new Date(formData.get('expiry') as string).toISOString() 
+              : (editingMovement?.timestamp || new Date().toISOString()),
+            notes: formData.get('notes') as string
+          });
+        }}>
+           <Select 
+             id="itemId" 
+             name="itemId" 
+             label="Item" 
+             defaultValue={editingMovement?.itemId || selectedItemForMovement?.id || ''} 
+             required
+           >
+              <option value="">Selecione um item...</option>
+              {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+           </Select>
+           <div className="grid grid-cols-2 gap-4">
+              <Input 
+                id="qty" 
+                name="qty" 
+                label="Quantidade" 
+                type="number" 
+                defaultValue={editingMovement?.quantity || ''} 
+                required 
+                min="1" 
+              />
+              <Input 
+                id="lot" 
+                name="lot" 
+                label="Lote" 
+                placeholder="Identificação" 
+                defaultValue={editingMovement?.lotNumber || ''} 
+                required 
+              />
+           </div>
+           {(movementType === 'ENTRADA' || (editingMovement && editingMovement.type === 'ENTRADA')) && (
+              <Input 
+                id="expiry" 
+                name="expiry" 
+                label="Validade" 
+                type="date" 
+                defaultValue={editingMovement?.timestamp ? format(parseISO(editingMovement.timestamp), 'yyyy-MM-dd') : ''} 
+                required 
+              />
+           )}
+           <Input 
+             id="notes" 
+             name="notes" 
+             label="Observações (Opcional)" 
+             defaultValue={editingMovement?.notes || ''} 
+           />
+           <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest italic">
+             {editingMovement ? 'Editando como:' : 'Registrando como:'} <b className="text-primary">{profile?.name}</b>
+           </p>
+           <Button type="submit" variant={movementType === 'ENTRADA' ? 'primary' : 'danger'} className="w-full py-3">
+              {editingMovement ? 'Salvar Alterações' : `Confirmar ${movementType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
+           </Button>
+        </form>
+      </Modal>
+
+    </div>
+  );
+}

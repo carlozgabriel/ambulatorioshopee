@@ -1,0 +1,10 @@
+{
+  "projectId": "ambulatorio-shopee",
+  "appId": "1:834819382915:web:de6271f669b45231ea45b6",
+  "apiKey": "AIzaSyBR5qEai5gkM9ZUOqkCyLKUQie3hx34lKU",
+  "authDomain": "ambulatorio-shopee.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "ambulatorio-shopee.firebasestorage.app",
+  "messagingSenderId": "834819382915",
+  "measurementId": ""
+}

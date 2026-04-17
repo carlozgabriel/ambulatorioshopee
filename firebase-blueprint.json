@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "Category for stock items (e.g., Medications, Consumables)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the category" },
+        "color": { "type": "string", "description": "Hex color code for the category" }
+      },
+      "required": ["name"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Information about a specific item in the clinic stock",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the item" },
+        "categoryId": { "type": "string", "description": "ID of the category" },
+        "supplier": { "type": "string", "description": "Default supplier" },
+        "currentQuantity": { "type": "number", "description": "Total quantity across all batches" },
+        "minQuantity": { "type": "number", "description": "Minimum threshold for alerts" }
+      },
+      "required": ["name", "categoryId"]
+    },
+    "Batch": {
+      "title": "Batch",
+      "description": "A specific lot of an item with a specific validity",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string", "description": "ID of the associated InventoryItem" },
+        "itemName": { "type": "string", "description": "Denormalized item name for easier listing" },
+        "lotNumber": { "type": "string", "description": "The lot/batch number" },
+        "expirationDate": { "type": "string", "format": "date-time", "description": "ISO 8601 validity date" },
+        "quantity": { "type": "number", "description": "Current quantity in this specific batch" }
+      },
+      "required": ["itemId", "lotNumber", "expirationDate", "quantity"]
+    },
+    "Movement": {
+      "title": "Stock Movement",
+      "description": "Log of entries or exits from the stock",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["ENTRADA", "SAIDA"] },
+        "itemId": { "type": "string", "description": "ID of the item" },
+        "batchId": { "type": "string", "description": "ID of the batch" },
+        "quantity": { "type": "number" },
+        "responsibleName": { "type": "string", "description": "Name of the person who did the movement" },
+        "responsibleUid": { "type": "string", "description": "UID of the person who did the movement" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" }
+      },
+      "required": ["type", "itemId", "quantity", "responsibleUid", "timestamp"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Application user profile",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["name", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": { "schema": "Category", "description": "Product categories" },
+    "/items/{itemId}": { "schema": "InventoryItem", "description": "Detailed inventory items" },
+    "/batches/{batchId}": { "schema": "Batch", "description": "All item batches for global validaty tracking" },
+    "/movements/{movementId}": { "schema": "Movement", "description": "Full audit log of stock movements" },
+    "/users/{uid}": { "schema": "User", "description": "User profile data" }
+  }
+}

@@ -1,0 +1,162 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: categories
+// Document ID: auto-generated
+// Fields:
+//   - name: string (required)
+//   - color: string (optional)
+//
+// Collection: items
+// Document ID: auto-generated
+// Fields:
+//   - name: string (required)
+//   - categoryId: string (required)
+//   - supplier: string (required)
+//   - currentQuantity: number (required)
+//   - minQuantity: number (optional)
+//
+// Collection: batches
+// Document ID: auto-generated
+// Fields:
+//   - itemId: string (required)
+//   - itemName: string (required)
+//   - lotNumber: string (required)
+//   - expirationDate: string (required, ISO 8601)
+//   - quantity: number (required)
+//
+// Collection: movements
+// Document ID: auto-generated
+// Fields:
+//   - type: string (required, ENTRADA|SAIDA)
+//   - itemId: string (required)
+//   - batchId: string (optional)
+//   - quantity: number (required)
+//   - responsibleName: string (required)
+//   - responsibleUid: string (required)
+//   - timestamp: string (required, ISO 8601)
+//   - notes: string (optional)
+//
+// Collection: users
+// Document ID: uid
+// Fields:
+//   - name: string (required)
+//   - email: string (required)
+//   - role: string (required, admin|user)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+       return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+       return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "carlosgabriel.camppos@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+    
+    function hasRequiredFields(fields) {
+       return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return hasRequiredFields(['name', 'email', 'role']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'user'];
+    }
+
+    function isValidCategory(data) {
+      return hasRequiredFields(['name']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 50;
+    }
+
+    function isValidItem(data) {
+      return hasRequiredFields(['name', 'categoryId', 'supplier', 'unit', 'currentQuantity']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.categoryId is string &&
+             data.supplier is string &&
+             data.unit is string &&
+             data.currentQuantity is number;
+    }
+
+    function isValidBatch(data) {
+      return hasRequiredFields(['itemId', 'itemName', 'lotNumber', 'expirationDate', 'quantity']) &&
+             data.itemId is string &&
+             data.itemName is string &&
+             data.lotNumber is string && data.lotNumber.size() > 0 &&
+             isValidDateString(data.expirationDate) &&
+             data.quantity is number;
+    }
+
+    function isValidMovement(data) {
+      return hasRequiredFields(['type', 'itemId', 'quantity', 'responsibleUid', 'responsibleName', 'timestamp']) &&
+             data.type in ['ENTRADA', 'SAIDA'] &&
+             data.itemId is string &&
+             data.quantity is number && data.quantity > 0 &&
+             data.responsibleUid == request.auth.uid &&
+             isValidDateString(data.timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(uid) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(uid) && request.resource.data.role == resource.data.role));
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidCategory(request.resource.data);
+    }
+
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidItem(request.resource.data);
+      allow update: if isAuthenticated() && isValidItem(request.resource.data);
+    }
+
+    match /batches/{batchId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /movements/{movementId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+  }
+}

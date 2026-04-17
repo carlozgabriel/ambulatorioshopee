@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+node.zip
+node-v20.12.2-win-x64/
+*.zip
+*.bat
