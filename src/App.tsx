@@ -821,11 +821,17 @@ export default function App() {
     }, [items, searchQuery, categoryFilter, statusFilter, supplierFilter]);
 
     const categoryStats = useMemo(() => {
-      return categories.map(cat => ({
-        name: cat.name,
-        value: items.filter(i => i.categoryId === cat.id).reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
-        count: items.filter(i => i.categoryId === cat.id).length
-      })).filter(c => c.count > 0);
+      return categories.map(cat => {
+        const catItems = items.filter(i => i.categoryId === cat.id);
+        return {
+          name: cat.name,
+          value: catItems.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
+          count: catItems.length,
+          color: cat.color || '#EE4D2D'
+        };
+      })
+      .filter(c => c.count > 0)
+      .sort((a, b) => b.value - a.value); // Ordena por maior quantidade
     }, [items, categories]);
 
     return (
@@ -894,28 +900,44 @@ export default function App() {
                   <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
                     <Grid className="w-4 h-4 text-primary" /> Distribuição por Categoria (Qtd)
                   </h3>
-                  <div className="h-[300px]">
+                  <div className="h-[360px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryStats}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {categoryStats.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={['#EE4D2D', '#2673DD', '#FFA500', '#00BFA5', '#7E57C2'][index % 5]} />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                           contentStyle={{ backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff', borderRadius: '4px', border: 'none', fontSize: '12px' }}
-                           itemStyle={{ fontWeight: 'bold' }}
+                      <BarChart 
+                        data={categoryStats} 
+                        layout="vertical" 
+                        margin={{ left: 10, right: 30, top: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                        <XAxis type="number" hide />
+                        <YAxis 
+                          dataKey="name" 
+                          type="category" 
+                          width={120} 
+                          fontSize={9} 
+                          fontWeight="bold"
+                          axisLine={false}
+                          tickLine={false}
+                          stroke={theme === 'dark' ? '#888' : '#666'}
+                          tickFormatter={(value) => value.length > 18 ? `${value.substring(0, 15)}...` : value}
                         />
-                        <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-                      </PieChart>
+                        <Tooltip 
+                          cursor={{ fill: 'transparent' }}
+                          contentStyle={{ 
+                            backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                            fontSize: '11px',
+                            padding: '8px',
+                            color: theme === 'dark' ? '#fff' : '#000'
+                          }}
+                        />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                          {categoryStats.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </Card>
