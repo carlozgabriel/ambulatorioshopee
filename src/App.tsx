@@ -12,6 +12,7 @@ import {
   addDoc, 
   setDoc,
   updateDoc,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -31,7 +32,10 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
-  Cell 
+  Cell,
+  PieChart,
+  Pie,
+  Legend
 } from 'recharts';
 import { 
   Package, 
@@ -248,6 +252,7 @@ export default function App() {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedItemForMovement, setSelectedItemForMovement] = useState<InventoryItem | null>(null);
   const [movementType, setMovementType] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
   const [selectedItemForIndication, setSelectedItemForIndication] = useState<InventoryItem | null>(null);
@@ -311,6 +316,28 @@ export default function App() {
   const handleEditItem = (item: InventoryItem) => {
     setEditingItem(item);
     setIsItemModalOpen(true);
+  };
+
+  const handleDeleteCategory = async (category: Category) => {
+    const itemCount = items.filter(i => i.categoryId === category.id).length;
+    let message = `Tem certeza que deseja excluir a categoria "${category.name}"?`;
+    if (itemCount > 0) {
+      message += `\n\nATENÇÃO: Existem ${itemCount} itens vinculados a esta categoria. Eles não serão excluídos, mas ficarão sem categoria associada.`;
+    }
+
+    if (!window.confirm(message)) return;
+
+    try {
+      await deleteDoc(doc(db, 'categories', category.id));
+      alert('Categoria excluída com sucesso!');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'categories');
+    }
+  };
+
+  const handleEditCategory = (category: Category) => {
+    setEditingCategory(category);
+    setIsCategoryModalOpen(true);
   };
 
   const fetchAiInsight = async () => {
@@ -767,115 +794,342 @@ export default function App() {
     </div>
   );
   const ItemsView = () => {
+    const [itemsSubTab, setItemsSubTab] = useState<'overview' | 'categories' | 'list'>('overview');
     const [searchQuery, setSearchQuery] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [supplierFilter, setSupplierFilter] = useState('all');
     
+    // Get unique suppliers for the filter
+    const uniqueSuppliers = useMemo(() => {
+      const suppliers = new Set(items.map(i => i.supplier).filter(Boolean));
+      return Array.from(suppliers).sort();
+    }, [items]);
+
     const filteredItems = useMemo(() => {
-      return items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    }, [items, searchQuery]);
+      return items.filter(i => {
+        const matchesSearch = i.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = categoryFilter === 'all' || i.categoryId === categoryFilter;
+        const matchesSupplier = supplierFilter === 'all' || i.supplier === supplierFilter;
+        let matchesStatus = true;
+        if (statusFilter === 'low') matchesStatus = (i.currentQuantity || 0) <= (i.minQuantity || 5);
+        if (statusFilter === 'out') matchesStatus = (i.currentQuantity || 0) === 0;
+        if (statusFilter === 'ok') matchesStatus = (i.currentQuantity || 0) > (i.minQuantity || 5);
+        
+        return matchesSearch && matchesCategory && matchesStatus && matchesSupplier;
+      });
+    }, [items, searchQuery, categoryFilter, statusFilter, supplierFilter]);
+
+    const categoryStats = useMemo(() => {
+      return categories.map(cat => ({
+        name: cat.name,
+        value: items.filter(i => i.categoryId === cat.id).reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
+        count: items.filter(i => i.categoryId === cat.id).length
+      })).filter(c => c.count > 0);
+    }, [items, categories]);
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-surface p-4 rounded-sm shadow-sm border border-border-base">
-          <div className="relative w-full md:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-            <input 
-              placeholder="Pesquisar catálogo..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base"
-            />
-          </div>
-          <Button className="w-full md:w-auto h-11" onClick={() => { setEditingItem(null); setIsItemModalOpen(true); }}>
-            <Plus className="w-5 h-5" /> Novo Cadastro
-          </Button>
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-1 border-b border-border-base mb-6 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'overview', label: 'Catálogo', icon: BarChart3 },
+            { id: 'categories', label: 'Categorias', icon: Tag },
+            { id: 'list', label: 'Lista', icon: List }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setItemsSubTab(tab.id as any)}
+              className={cn(
+                "flex items-center gap-2 px-6 py-3 text-xs font-black uppercase tracking-widest transition-all relative whitespace-nowrap",
+                itemsSubTab === tab.id 
+                  ? "text-primary" 
+                  : "text-text-muted hover:text-text-base"
+              )}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+              {itemsSubTab === tab.id && (
+                <motion.div 
+                  layoutId="items-tab-active"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+                />
+              )}
+            </button>
+          ))}
         </div>
 
-        <Card className="overflow-hidden border-border-base">
-           <div className="overflow-x-auto">
-              <table className="w-full text-left text-[11px]">
-                 <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
-                    <tr>
-                       <th className="px-5 py-3 border-b border-border-base w-[10%]">Status</th>
-                       <th className="px-5 py-3 border-b border-border-base text-left">Insumo</th>
-                       <th className="px-5 py-3 border-b border-border-base">Categoria</th>
-                       <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
-                       <th className="px-5 py-3 border-b border-border-base text-center">Unidade</th>
-                       <th className="px-5 py-3 border-b border-border-base text-center">Início</th>
-                       <th className="px-5 py-3 border-b border-border-base text-center">Mín. Alerta</th>
-                       <th className="px-5 py-3 border-b border-border-base text-right">Ação</th>
-                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-border-base">
-                    {filteredItems.map(item => (
-                       <tr key={item.id} className="hover:bg-bg-main/50 transition-colors">
-                          <td className="px-5 py-3">
-                             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                          </td>
-                          <td className="px-5 py-3 font-black text-text-base uppercase italic">{item.name}</td>
-                          <td className="px-5 py-3">
-                             <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
-                                {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
-                             </span>
-                          </td>
-                          <td className="px-5 py-3 text-text-muted uppercase font-bold">{item.supplier || '-'}</td>
-                          <td className="px-5 py-3 text-center text-text-muted font-bold uppercase text-[10px]">{item.unit || 'UN'}</td>
-                          <td className="px-5 py-3 text-center text-text-muted font-mono">0</td>
-                          <td className="px-5 py-3 text-center text-rose-500 font-black">{item.minQuantity || 5}</td>
-                          <td className="px-5 py-3 text-right">
-                             <div className="flex items-center justify-end gap-3">
-                               {item.indication && (
-                                 <button
-                                   onClick={() => setSelectedItemForIndication(item)}
-                                   title="Ver indicação"
-                                   className="text-text-muted hover:text-primary transition-colors"
-                                 >
-                                   <Eye className="w-4 h-4" />
-                                 </button>
-                               )}
-                               <button 
-                                 onClick={() => handleEditItem(item)}
-                                 title="Editar item"
-                                 className="text-primary hover:text-accent transition-colors"
-                               >
-                                 <Edit2 className="w-4 h-4" />
-                               </button>
-                               <button 
-                                 onClick={() => handleDeleteItem(item.id)}
-                                 title="Excluir item"
-                                 className="text-rose-500 hover:text-rose-600 transition-colors"
-                               >
-                                 <Trash2 className="w-4 h-4" />
-                               </button>
-                             </div>
-                          </td>
-                       </tr>
-                    ))}
-                 </tbody>
-              </table>
-           </div>
-        </Card>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-           <Card className="p-6 border-2 border-primary/5 bg-bg-main/30">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-black text-text-base uppercase tracking-tight italic text-xs flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-primary" />
-                  Gerenciar Categorias
-                </h3>
-              </div>
-              <div className="space-y-1.5 mb-4">
-                {categories.map(cat => (
-                  <div key={cat.id} className="flex items-center gap-2 p-2 bg-surface border border-border-base rounded-sm text-text-base">
-                    <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
-                    <span className="text-[10px] font-bold text-text-base uppercase truncate flex-1">{cat.name}</span>
+        <AnimatePresence mode="wait">
+          {itemsSubTab === 'overview' && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="p-6 border-l-4 border-primary">
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total de Itens Cadastrados</p>
+                  <p className="text-3xl font-black text-text-base italic">{items.length}</p>
+                  <div className="mt-4 flex items-center gap-2 text-emerald-500">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span className="text-[9px] font-bold uppercase">Catálogo Ativo</span>
                   </div>
+                </Card>
+                <Card className="p-6 border-l-4 border-accent">
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total em Estoque</p>
+                  <p className="text-3xl font-black text-text-base italic">{items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)}</p>
+                  <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Unidades totais somadas</p>
+                </Card>
+                <Card className="p-6 border-l-4 border-rose-500">
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Categorias Ativas</p>
+                  <p className="text-3xl font-black text-text-base italic">{categories.length}</p>
+                  <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Distribuição diversificada</p>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="p-6">
+                  <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
+                    <Grid className="w-4 h-4 text-primary" /> Distribuição por Categoria (Qtd)
+                  </h3>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryStats}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {categoryStats.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={['#EE4D2D', '#2673DD', '#FFA500', '#00BFA5', '#7E57C2'][index % 5]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                           contentStyle={{ backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff', borderRadius: '4px', border: 'none', fontSize: '12px' }}
+                           itemStyle={{ fontWeight: 'bold' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
+                  <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" /> Resumo das Categorias
+                  </h3>
+                  <div className="space-y-4">
+                    {categoryStats.map((cat, idx) => (
+                      <div key={idx} className="flex flex-col gap-1.5">
+                        <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                          <span className="text-text-base">{cat.name}</span>
+                          <span className="text-primary">{cat.value} un</span>
+                        </div>
+                        <div className="w-full h-2 bg-bg-main rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(cat.value / items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 1)) * 100}%` }}
+                            className="h-full bg-primary"
+                          />
+                        </div>
+                        <p className="text-[9px] text-text-muted font-bold uppercase">{cat.count} TIPOS DE INSUMO NESTA CATEGORIA</p>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            </motion.div>
+          )}
+
+          {itemsSubTab === 'categories' && (
+            <motion.div
+              key="categories"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between bg-surface p-4 rounded-sm border border-border-base">
+                <div className="space-y-1">
+                   <h3 className="text-lg font-black text-text-base uppercase italic">Gestão de Grupos</h3>
+                   <p className="text-[10px] text-text-muted font-bold uppercase">Organize seus insumos por categorias lógicas</p>
+                </div>
+                <Button onClick={() => setIsCategoryModalOpen(true)}>
+                  <Plus className="w-4 h-4" /> Nova Categoria
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {categories.map(cat => (
+                  <Card key={cat.id} className="p-6 hover:border-primary transition-all group border-2 border-transparent">
+                     <div className="flex items-center gap-4 mb-4">
+                        <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
+                        <div className="flex-1">
+                           <h4 className="font-black text-text-base uppercase italic leading-none">{cat.name}</h4>
+                           <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{items.filter(i => i.categoryId === cat.id).length} itens vinculados</p>
+                        </div>
+                     </div>
+                     <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1 h-8 text-[9px]" onClick={() => handleEditCategory(cat)}>
+                           <Edit2 className="w-3 h-3 mr-2" /> Editar
+                        </Button>
+                        <Button variant="outline" className="flex-1 h-8 text-[9px] border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white" onClick={() => handleDeleteCategory(cat)}>
+                           <Trash2 className="w-3 h-3 mr-2" /> Excluir
+                        </Button>
+                     </div>
+                  </Card>
                 ))}
               </div>
-              <Button variant="outline" className="w-full text-[9px] h-8 font-black uppercase" onClick={() => setIsCategoryModalOpen(true)}>
-                + Adicionar Categoria
-              </Button>
-           </Card>
-        </div>
+            </motion.div>
+          )}
+
+          {itemsSubTab === 'list' && (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="space-y-6"
+            >
+              {/* Filters Bar */}
+              <div className="flex flex-col xl:flex-row gap-4 items-center bg-surface p-4 rounded-sm border border-border-base shadow-sm">
+                <div className="relative flex-1 w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                  <input 
+                    placeholder="Pesquisar por nome ou especificação..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
+                  />
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                   <div className="flex items-center gap-2">
+                      <Filter className="w-3.5 h-3.5 text-text-muted" />
+                      <span className="text-[10px] font-black uppercase text-text-muted">Filtros:</span>
+                   </div>
+                   
+                   <Select 
+                     id="catFilter" 
+                     value={categoryFilter} 
+                     onChange={(e) => setCategoryFilter(e.target.value)}
+                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                   >
+                     <option value="all">TODAS CATEGORIAS</option>
+                     {categories.map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)}
+                   </Select>
+
+                   <Select 
+                     id="statusFilter" 
+                     value={statusFilter} 
+                     onChange={(e) => setStatusFilter(e.target.value as any)}
+                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                   >
+                     <option value="all">STATUS (TODOS)</option>
+                     <option value="ok">DISPONÍVEL</option>
+                     <option value="low">BAIXO ESTOQUE</option>
+                     <option value="out">INDISPONÍVEL</option>
+                   </Select>
+
+                   <Select 
+                     id="supplierFilter" 
+                     value={supplierFilter} 
+                     onChange={(e) => setSupplierFilter(e.target.value)}
+                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                   >
+                     <option value="all">FORNECEDOR (TODOS)</option>
+                     {uniqueSuppliers.map(s => <option key={s} value={s}>{s?.toUpperCase()}</option>)}
+                   </Select>
+
+                   <div className="xl:h-8 xl:w-[1px] bg-border-base hidden xl:block" />
+
+                   <Button className="h-9 text-[10px]" onClick={() => { setEditingItem(null); setIsItemModalOpen(true); }}>
+                     <Plus className="w-4 h-4" /> Novo Item
+                   </Button>
+                </div>
+              </div>
+
+              <Card className="overflow-hidden border-border-base">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
+                      <tr>
+                        <th className="px-5 py-3 border-b border-border-base w-[10%]">Status</th>
+                        <th className="px-5 py-3 border-b border-border-base text-left">Insumo</th>
+                        <th className="px-5 py-3 border-b border-border-base">Categoria</th>
+                        <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
+                        <th className="px-5 py-3 border-b border-border-base text-center">Unidade</th>
+                        <th className="px-5 py-3 border-b border-border-base text-center">Mín. Alerta</th>
+                        <th className="px-5 py-3 border-b border-border-base text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                      {filteredItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-5 py-20 text-center text-text-muted font-bold uppercase tracking-widest opacity-50">
+                            Nenhum item encontrado com os filtros aplicados
+                          </td>
+                        </tr>
+                      ) : filteredItems.map(item => {
+                        const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                        const outState = (item.currentQuantity || 0) === 0;
+                        return (
+                          <tr key={item.id} className="hover:bg-bg-main/50 transition-colors group">
+                            <td className="px-5 py-3">
+                              <div className={cn(
+                                "w-2 h-2 rounded-full",
+                                outState ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" : 
+                                lowStock ? "bg-accent shadow-[0_0_8px_rgba(255,165,0,0.5)]" : 
+                                "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                              )} />
+                            </td>
+                            <td className="px-5 py-3">
+                               <p className="font-black text-text-base uppercase italic leading-none group-hover:text-primary transition-colors">{item.name}</p>
+                               <p className="text-[8px] text-text-muted mt-1 uppercase font-bold">ID: {item.id.slice(0,10)}</p>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
+                                {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-text-muted uppercase font-bold">{item.supplier || '-'}</td>
+                            <td className="px-5 py-3 text-center text-text-muted font-bold uppercase text-[10px]">{item.unit || 'UN'}</td>
+                            <td className="px-5 py-3 text-center">
+                               <span className={cn("text-xs font-black px-2 py-0.5 rounded-sm", lowStock ? "text-rose-500 bg-rose-500/5" : "text-text-muted bg-bg-main")}>
+                                  {item.minQuantity || 5}
+                               </span>
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                                {item.indication && (
+                                  <button onClick={() => setSelectedItemForIndication(item)} title="Ver indicação" className="text-text-muted hover:text-primary transition-colors">
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button onClick={() => handleEditItem(item)} title="Editar item" className="text-primary hover:text-accent transition-colors">
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDeleteItem(item.id)} title="Excluir item" className="text-rose-500 hover:text-rose-600 transition-colors">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   };
@@ -1597,26 +1851,57 @@ export default function App() {
 
       <Modal 
         isOpen={isCategoryModalOpen} 
-        onClose={() => setIsCategoryModalOpen(false)} 
-        title="Gerenciar Categorias"
+        onClose={() => { setIsCategoryModalOpen(false); setEditingCategory(null); }} 
+        title={editingCategory ? "Editar Categoria" : "Gerenciar Categorias"}
       >
         <form className="space-y-4" onSubmit={async (e) => {
           e.preventDefault();
           const form = e.target as HTMLFormElement;
           const name = (form.elements.namedItem('catName') as HTMLInputElement).value;
-          await addDoc(collection(db, 'categories'), { name }).catch(e => handleFirestoreError(e, OperationType.WRITE, 'categories'));
-          form.reset();
+          
+          try {
+            if (editingCategory) {
+              await updateDoc(doc(db, 'categories', editingCategory.id), { name });
+              setEditingCategory(null);
+              setIsCategoryModalOpen(false);
+            } else {
+              await addDoc(collection(db, 'categories'), { name });
+            }
+            form.reset();
+          } catch (err) {
+            handleFirestoreError(err, editingCategory ? OperationType.UPDATE : OperationType.WRITE, 'categories');
+          }
         }}>
-           <Input id="catName" name="catName" label="Nova Categoria" placeholder="Ex: Medicamentos" required />
-           <Button type="submit" variant="secondary" className="w-full">Adicionar Categoria</Button>
-           <div className="space-y-2 mt-6">
-              <h4 className="text-xs font-bold text-text-muted uppercase tracking-widest">Existentes</h4>
-              {categories.map(c => (
-                <div key={c.id} className="flex justify-between items-center bg-bg-main px-3 py-2 rounded-sm border border-border-base text-text-base">
-                  <span className="text-sm font-bold uppercase italic tracking-tight">{c.name}</span>
-                </div>
-              ))}
-           </div>
+           <Input 
+             id="catName" 
+             name="catName" 
+             label={editingCategory ? "Nome da Categoria" : "Nova Categoria"} 
+             placeholder="Ex: Medicamentos" 
+             defaultValue={editingCategory?.name || ''}
+             required 
+           />
+           <Button type="submit" variant="secondary" className="w-full">
+             {editingCategory ? "Salvar Alterações" : "Adicionar Categoria"}
+           </Button>
+           
+           {!editingCategory && (
+             <div className="space-y-2 mt-6">
+                <h4 className="text-xs font-bold text-text-muted uppercase tracking-widest">Existentes</h4>
+                {categories.map(c => (
+                  <div key={c.id} className="flex justify-between items-center bg-bg-main px-3 py-2 rounded-sm border border-border-base text-text-base">
+                    <span className="text-sm font-bold uppercase italic tracking-tight">{c.name}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => handleEditCategory(c)} className="p-1 text-primary hover:bg-primary/10 rounded transition-colors">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => handleDeleteCategory(c)} className="p-1 text-rose-500 hover:bg-rose-500/10 rounded transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+             </div>
+           )}
         </form>
       </Modal>
 
