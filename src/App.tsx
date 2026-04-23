@@ -1527,6 +1527,35 @@ export default function App() {
     }
   };
 
+  const handleCustomLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoading(true);
+
+    // Se o usuário não digitar um email completo, assume o domínio @c3.com.br
+    const emailToUse = username.includes('@') ? username : `${username}@c3.com.br`;
+
+    try {
+      await signInWithEmailAndPassword(auth, emailToUse, password);
+    } catch (error: any) {
+      console.error("Erro no login:", error);
+      
+      // Se o usuário for o admin que queremos criar e ele não existir, tenta criar
+      if (error.code === 'auth/user-not-found' && emailToUse === 'adminc3ambulatorio@c3.com.br' && password === 'Admin@c3') {
+        try {
+          await createUserWithEmailAndPassword(auth, emailToUse, password);
+          return; // onAuthStateChanged cuidará do resto
+        } catch (createErr: any) {
+          setLoginError('Erro ao criar conta admin: ' + createErr.message);
+        }
+      } else {
+        setLoginError('Usuário ou senha incorretos.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEditCategory = (category: Category) => {
     setEditingCategory(category);
     setIsCategoryModalOpen(true);
@@ -1677,10 +1706,11 @@ export default function App() {
           const userRef = doc(db, 'users', u.uid);
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
+            const adminEmails = ['carlosgabriel.camppos@gmail.com', 'adminc3ambulatorio@c3.com.br'];
             const newProfile: Omit<UserProfile, 'id'> = {
-              name: u.displayName || 'Sem Nome',
+              name: u.displayName || (u.email?.split('@')[0]) || 'Sem Nome',
               email: u.email || '',
-              role: u.email === 'carlosgabriel.camppos@gmail.com' ? 'admin' : 'user'
+              role: adminEmails.includes(u.email || '') ? 'admin' : 'user'
             };
             await setDoc(userRef, newProfile).catch(e => handleFirestoreError(e, OperationType.WRITE, 'users'));
             setProfile({ id: u.uid, ...newProfile });
