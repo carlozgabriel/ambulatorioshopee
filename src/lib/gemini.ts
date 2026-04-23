@@ -6,15 +6,15 @@ const getApiKey = () => {
   const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
               process.env.VITE_GEMINI_API_KEY ||
               process.env.GEMINI_API_KEY ||
-              "AIzaSyBN8YS6Ikzeu0UNemJAJ1IkmOEXey9qLYA"; // Atualizada para sua nova chave do print
+              ""; // Chave fixa removida por segurança (leaked)
   
   if (key && key.trim().startsWith("AIza")) {
     console.log("Shopito: Conexão com Google Gemini preparada.");
     return key.trim();
   }
-  console.warn("Shopito: Chave Gemini não encontrada.");
-  return key?.trim();
+  return "";
 };
+
 
 const API_KEY = getApiKey();
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${API_KEY}`;

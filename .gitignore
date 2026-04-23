@@ -4,9 +4,13 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
-!.env.example
-node.zip
+# env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
 node-v20.12.2-win-x64/
 *.zip
 *.bat

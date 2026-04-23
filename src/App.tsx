@@ -72,7 +72,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Edit2
+  Edit2,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, isPast, isBefore, addDays, parseISO } from 'date-fns';
@@ -1191,6 +1192,7 @@ const ReportsView = ({
     element.download = `relatorio-shopito-${new Date().toISOString().split('T')[0]}.md`;
     document.body.appendChild(element);
     element.click();
+    document.body.removeChild(element);
   };
 
   return (
@@ -1337,6 +1339,7 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return localStorage.getItem('theme') as 'light' | 'dark' || 'light';
   });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Theme effect
   useEffect(() => {
@@ -1563,168 +1566,6 @@ export default function App() {
     };
   }, [user]);
 
-  // Special listener for all batches (Global alert system)
-  useEffect(() => {
-    if (!user) return;
-    // In many cases, you want to see ALL batches to find what's expiring.
-    // Collection group is best here.
-    // We'll simulate by fetching top level batches in the UI logic if we change structure.
-    // For now, I'll put batches in items/{itemId}/batches but I'll query them.
-    // I will add a separate batches collection for simplicity in alerts.
-  }, [user]);
-
-
-  // --- Actions ---
-
-  const handleCustomLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    if (username === 'ambulatoriosocmg2' && password === 'shopee@2026') {
-      try {
-        await signInWithEmailAndPassword(auth, 'ambulatoriosocmg2@shopee.com', 'shopee@2026');
-      } catch (err: any) {
-        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-          try {
-            await createUserWithEmailAndPassword(auth, 'ambulatoriosocmg2@shopee.com', 'shopee@2026');
-          } catch (createErr: any) {
-            setLoginError('Erro interno ao registrar no banco de dados. ' + createErr.message);
-          }
-        } else {
-          setLoginError('Erro de conexão: ' + err.message);
-        }
-      }
-    } else {
-      setLoginError('Credenciais inválidas.');
-    }
-  };
-  const handleLogout = () => signOut(auth);
-
-  const registerMovement = async (data: { 
-    itemId: string; 
-    type: 'ENTRADA' | 'SAIDA'; 
-    quantity: number; 
-    lotNumber: string; 
-    expirationDate: string; 
-    notes?: string; 
-  }) => {
-    if (!user || !profile) return;
-
-    try {
-      // 1. If editing, reverse the OLD impact first
-      if (editingMovement) {
-        // Reverse Batch quantity
-        const batchesRef = collection(db, 'batches');
-        const qOld = query(batchesRef, where('itemId', '==', editingMovement.itemId), where('lotNumber', '==', editingMovement.lotNumber));
-        const batchSnapOld = await getDocs(qOld);
-        if (!batchSnapOld.empty) {
-          const batchDocId = batchSnapOld.docs[0].id;
-          const currentQty = batchSnapOld.docs[0].data().quantity;
-          const reversedQty = editingMovement.type === 'ENTRADA' ? currentQty - editingMovement.quantity : currentQty + editingMovement.quantity;
-          await updateDoc(doc(db, 'batches', batchDocId), { quantity: reversedQty });
-        }
-
-        // Reverse Item Total
-        const itemRefOld = doc(db, 'items', editingMovement.itemId);
-        const itemSnapOld = await getDoc(itemRefOld);
-        if (itemSnapOld.exists()) {
-          const itemData = itemSnapOld.data() as InventoryItem;
-          const reversedTotal = editingMovement.type === 'ENTRADA' ? (itemData.currentQuantity || 0) - editingMovement.quantity : (itemData.currentQuantity || 0) + editingMovement.quantity;
-          await updateDoc(itemRefOld, { currentQuantity: reversedTotal });
-        }
-      }
-
-      // 2. Update or Create movement log
-      if (editingMovement) {
-        await updateDoc(doc(db, 'movements', editingMovement.id), {
-          ...data,
-          responsibleName: profile.name,
-          responsibleUid: user.uid,
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        await addDoc(collection(db, 'movements'), {
-          ...data,
-          responsibleName: profile.name,
-          responsibleUid: user.uid,
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      // 3. Apply NEW impact to Batch
-      const batchesRef = collection(db, 'batches');
-      const q = query(batchesRef, where('itemId', '==', data.itemId), where('lotNumber', '==', data.lotNumber));
-      const batchSnap = await getDocs(q);
-      const item = items.find(i => i.id === data.itemId);
-
-      if (!batchSnap.empty) {
-        const batchDocId = batchSnap.docs[0].id;
-        // Refetch to get most recent quantity after potential reversal
-        const freshBatchSnap = await getDoc(doc(db, 'batches', batchDocId));
-        const existingQty = freshBatchSnap.data()?.quantity || 0;
-        const newQty = data.type === 'ENTRADA' ? existingQty + data.quantity : existingQty - data.quantity;
-        
-        if (newQty < 0) throw new Error('Saldo insuficiente no lote selecionado.');
-        
-        await updateDoc(doc(db, 'batches', batchDocId), {
-          quantity: newQty,
-          expirationDate: data.expirationDate
-        });
-      } else {
-        if (data.type === 'SAIDA') throw new Error('Lote não encontrado para retirada.');
-        await addDoc(batchesRef, {
-          itemId: data.itemId,
-          itemName: item?.name || 'Item',
-          lotNumber: data.lotNumber,
-          expirationDate: data.expirationDate,
-          quantity: data.quantity
-        });
-      }
-
-      // 4. Apply NEW impact to Item Total
-      const itemRef = doc(db, 'items', data.itemId);
-      const freshItemSnap = await getDoc(itemRef);
-      if (freshItemSnap.exists()) {
-        const itemData = freshItemSnap.data() as InventoryItem;
-        const newTotal = data.type === 'ENTRADA' ? (itemData.currentQuantity || 0) + data.quantity : (itemData.currentQuantity || 0) - data.quantity;
-        await updateDoc(itemRef, { currentQuantity: newTotal });
-      }
-
-      setIsMovementModalOpen(false);
-      setEditingMovement(null);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Erro ao processar movimentação');
-      handleFirestoreError(e, editingMovement ? OperationType.UPDATE : OperationType.WRITE, 'movements');
-    }
-  };
-
-  // --- Derived State ---
-
-  const expiringBatches = useMemo(() => {
-    return batches
-      .filter(b => b.quantity > 0)
-      .map(b => ({
-        ...b,
-        status: isPast(parseISO(b.expirationDate)) 
-          ? 'expired' 
-          : isBefore(parseISO(b.expirationDate), addDays(new Date(), 30)) 
-            ? 'soon' 
-            : 'ok'
-      }))
-      .filter(b => b.status !== 'ok')
-      .sort((a, b) => parseISO(a.expirationDate).getTime() - parseISO(b.expirationDate).getTime());
-  }, [batches]);
-
-  const stats = useMemo(() => ({
-    totalItems: items.length,
-    lowStock: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length,
-    expiringSoon: expiringBatches.length,
-    recentMovements: movements.length
-  }), [items, movements, expiringBatches]);
-
-
-
-
-
   // --- Auth Guard ---
 
   if (loading) return (
@@ -1787,94 +1628,67 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-bg-main flex">
-      {/* Sidebar - Shopee Graphite */}
-      <nav className="w-16 md:w-[240px] bg-secondary flex flex-col fixed h-full z-10 transition-all text-white border-r border-white/5 shadow-2xl">
-        <div className="p-8 flex items-center justify-center md:justify-start gap-4">
-          <div className="w-11 h-11 rounded-xl overflow-hidden border-2 border-primary shadow-xl shadow-primary/20 shrink-0 bg-white">
-            <img 
-              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-              alt="Mascote Shopee"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-          </div>
-          <div className="hidden md:flex flex-col leading-none">
-            <span className="font-black text-[9px] tracking-[0.2em] text-white/40 uppercase italic mb-0.5">Ambulatório</span>
-            <span className="font-black text-lg tracking-tight text-white uppercase italic leading-none">Inteligente</span>
-            <span className="text-primary font-black text-[10px] tracking-widest uppercase">Shopee</span>
-          </div>
+    <div className="flex h-screen bg-background overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
+      {/* Sidebar Retrátil */}
+      <motion.aside 
+        initial={false}
+        animate={{ width: isSidebarCollapsed ? 80 : 280 }}
+        className="relative bg-surface border-r border-border-base flex flex-col z-20 shadow-2xl"
+      >
+        <div className="p-6 mb-4 flex items-center justify-between">
+          {!isSidebarCollapsed && (
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center rotate-3 shadow-lg">
+                <Package className="text-white w-6 h-6 -rotate-3" />
+              </div>
+              <div>
+                <h1 className="text-sm font-black uppercase tracking-tighter leading-none italic text-primary">Ambulatório</h1>
+                <h1 className="text-lg font-black uppercase tracking-tighter leading-none italic text-text-base">Shopee</h1>
+              </div>
+            </div>
+          )}
+          {isSidebarCollapsed && (
+             <div className="w-10 h-10 mx-auto rounded-sm bg-primary flex items-center justify-center shadow-lg">
+                <Package className="text-white w-6 h-6" />
+             </div>
+          )}
         </div>
 
-        <div className="flex-1 px-4 space-y-1.5 mt-6">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            { id: 'items', label: 'Catálogo', icon: Box },
-            { id: 'stock', label: 'Estoque Real', icon: ShoppingBag },
-            { id: 'movements', label: 'Movimentações', icon: History },
-            { id: 'reports', label: 'Relatórios IA', icon: FileText },
-          ].map((item) => (
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+          {( [
+            { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+            { id: 'items', icon: Package, label: 'Catálogo' },
+            { id: 'stock', icon: ShoppingBag, label: 'Estoque Real' },
+            { id: 'movements', icon: History, label: 'Movimentações' },
+            { id: 'reports', icon: FileText, label: 'Relatórios IA' },
+          ] as const).map(tab => (
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "w-full flex items-center gap-3.5 px-4 py-3.5 rounded-lg transition-all group relative overflow-hidden",
-                activeTab === item.id 
-                  ? "bg-primary text-white shadow-xl shadow-primary/30" 
-                  : "text-white/50 hover:bg-white/[0.03] hover:text-white"
+                "w-full flex items-center gap-3 px-4 py-4 rounded-sm transition-all relative group",
+                activeTab === tab.id 
+                  ? "bg-primary text-white shadow-xl shadow-primary/20 translate-x-1" 
+                  : "text-text-muted hover:bg-surface-variant/50 hover:text-text-base"
               )}
             >
-              <item.icon className={cn("w-5 h-5 shrink-0 transition-transform duration-300 group-hover:scale-110", activeTab === item.id ? "text-white" : "text-white/30 group-hover:text-white/60")} />
-              <span className="hidden md:block font-bold text-xs uppercase tracking-wider">{item.label}</span>
-              {activeTab === item.id && (
-                <motion.div 
-                  layoutId="sidebar-active"
-                  className="absolute left-0 w-1 h-6 bg-white rounded-r-full"
-                />
+              <tab.icon className={cn("w-5 h-5", activeTab === tab.id ? "animate-pulse" : "")} />
+              {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">{tab.label}</span>}
+              {activeTab === tab.id && (
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-l-full" />
+              )}
+              {isSidebarCollapsed && (
+                 <div className="absolute left-full ml-2 px-2 py-1 bg-surface border border-border-base rounded-sm text-[10px] font-bold text-text-base opacity-0 group-hover:opacity-100 pointer-events-none transition-all whitespace-nowrap z-50">
+                    {tab.label}
+                 </div>
               )}
             </button>
           ))}
-        </div>
+        </nav>
 
-        <div className="p-6 space-y-2">
-          <button 
+        <div className="p-3 border-t border-border-base space-y-1">
+          <button
             onClick={toggleTheme}
-            className="w-full h-11 flex items-center justify-center md:justify-start gap-4 px-4 text-white/40 hover:text-white bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 rounded-lg transition-all"
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            <span className="font-bold uppercase tracking-[0.1em] text-[9px] hidden md:block">Alternar Tema</span>
-          </button>
-          
-          <button 
-            onClick={handleLogout}
-            className="w-full h-11 flex items-center justify-center md:justify-start gap-4 px-4 text-white/40 hover:text-red-400 bg-white/[0.02] hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 rounded-lg transition-all"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="font-bold uppercase tracking-[0.1em] text-[9px] hidden md:block">Encerrar Sessão</span>
-          </button>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="ml-16 md:ml-[240px] flex-1 min-h-screen bg-bg-main relative">
-        <div className="max-w-7xl mx-auto p-4 lg:p-6">
-          <header className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border-base pb-4">
-            <div className="space-y-1">
-               <div className="flex items-center gap-2 mb-2">
-                 <span className="px-2 py-0.5 bg-primary/10 text-primary text-[8px] font-black uppercase tracking-[0.2em] rounded-sm">Módulo {activeTab}</span>
-               </div>
-               <h1 className="text-2xl font-black text-secondary tracking-tighter uppercase italic leading-none">
-                  {activeTab === 'dashboard' && 'Visão Geral'}
-                  {activeTab === 'items' && 'Gestão de Itens'}
-                  {activeTab === 'stock' && 'Inventário Físico'}
-                  {activeTab === 'movements' && 'Fluxo de Carga'}
-                  {activeTab === 'reports' && 'Shopito Intelligence'}
-               </h1>
-               <p className="text-text-muted font-bold text-[10px] uppercase tracking-widest pl-1">{format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {profile && (
                 <div className="flex items-center gap-3 px-4 py-2 bg-surface border border-border-base rounded-lg shadow-sm mr-4">
                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-xs uppercase">
                     {profile.name.charAt(0)}
