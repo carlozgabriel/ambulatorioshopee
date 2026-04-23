@@ -3,13 +3,20 @@ import { InventoryItem, Movement, Category } from "../types";
 // Configurações do OpenRouter
 const getApiKey = () => {
   const key = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || 
-              process.env.OPENROUTER_API_KEY || 
+              (import.meta as any).env?.OPENROUTER_API_KEY || 
               "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";
+  
+  if (key && key.startsWith("sk-or-v1")) {
+    console.log("Shopito: Chave de API carregada com sucesso.");
+    return key.trim();
+  }
+  console.warn("Shopito: Chave de API não encontrada ou inválida.");
   return key?.trim();
 };
 
 const OPENROUTER_API_KEY = getApiKey();
-const OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
+const OPENROUTER_MODEL = "google/gemini-2.0-flash-exp:free";
+
 
 async function callOpenRouter(prompt: string): Promise<string> {
   if (!OPENROUTER_API_KEY) {
