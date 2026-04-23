@@ -1622,6 +1622,7 @@ export default function App() {
   const [modalSelectedItemId, setModalSelectedItemId] = useState<string>('');
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [showFiscalInfo, setShowFiscalInfo] = useState(false);
 
   const handleDeleteMovement = (movement: Movement) => {
     setMovementToDelete(movement);
@@ -1848,6 +1849,8 @@ export default function App() {
       setItemSearchQuery(initItem?.name || '');
       setIsItemDropdownOpen(false);
       setInvoiceFile(null);
+      // Reset fiscal toggle: auto-open if editing and has invoice data
+      setShowFiscalInfo(!!(editingMovement as any)?.invoiceNumber);
     }
   }, [isMovementModalOpen]);
 
@@ -2764,91 +2767,124 @@ export default function App() {
              defaultValue={editingMovement?.notes || ''} 
            />
 
-           {/* ── Informação Fiscal (apenas Entrada) ── */}
+           {/* ── Toggle Informação Fiscal (apenas Entrada) ── */}
            {(movementType === 'ENTRADA' || (editingMovement && editingMovement.type === 'ENTRADA')) && (
-             <div className="border border-border-base rounded-sm overflow-hidden">
-               <div className="bg-bg-main px-4 py-2.5 border-b border-border-base flex items-center gap-2">
-                 <FileText className="w-3.5 h-3.5 text-primary" />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Informação Fiscal</span>
-               </div>
-               <div className="p-4 space-y-3">
-                 <div className="grid grid-cols-2 gap-3">
-                   <Input
-                     id="invoiceNumber"
-                     name="invoiceNumber"
-                     label="Número da Nota"
-                     placeholder="Ex: 000123"
-                     defaultValue={(editingMovement as any)?.invoiceNumber || ''}
-                   />
-                   <Input
-                     id="invoiceSeries"
-                     name="invoiceSeries"
-                     label="Série"
-                     placeholder="Ex: 001"
-                     defaultValue={(editingMovement as any)?.invoiceSeries || ''}
-                   />
+             <div className="space-y-3">
+               {/* Pergunta de toggle */}
+               <button
+                 type="button"
+                 onClick={() => setShowFiscalInfo(v => !v)}
+                 className={cn(
+                   "w-full flex items-center justify-between px-4 py-3 rounded-sm border transition-all",
+                   showFiscalInfo
+                     ? "border-primary bg-primary/5 text-primary"
+                     : "border-border-base bg-bg-main text-text-muted hover:border-primary/50"
+                 )}
+               >
+                 <div className="flex items-center gap-2">
+                   <FileText className="w-4 h-4 shrink-0" />
+                   <span className="text-xs font-black uppercase tracking-widest">
+                     Deseja adicionar informações fiscais?
+                   </span>
                  </div>
-                 <Input
-                   id="invoiceSupplier"
-                   name="invoiceSupplier"
-                   label="Fornecedor"
-                   placeholder="Ex: MedSul Distribuídora"
-                   defaultValue={(editingMovement as any)?.invoiceSupplier || (modalSelectedItemId ? items.find(i => i.id === modalSelectedItemId)?.supplier : '') || ''}
-                 />
-                 <div className="grid grid-cols-2 gap-3">
-                   <Input
-                     id="invoiceIssueDate"
-                     name="invoiceIssueDate"
-                     label="Data de Emissão"
-                     type="date"
-                     defaultValue={(editingMovement as any)?.invoiceIssueDate || ''}
-                   />
-                   <Input
-                     id="invoiceTotalValue"
-                     name="invoiceTotalValue"
-                     label="Valor Total (R$)"
-                     type="number"
-                     placeholder="0,00"
-                     defaultValue={(editingMovement as any)?.invoiceTotalValue || ''}
-                   />
+                 <div className={cn(
+                   "w-10 h-5 rounded-full transition-colors relative shrink-0",
+                   showFiscalInfo ? "bg-primary" : "bg-border-base"
+                 )}>
+                   <div className={cn(
+                     "absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
+                     showFiscalInfo ? "translate-x-5" : "translate-x-0.5"
+                   )} />
                  </div>
-                 {/* Anexo da Nota */}
-                 <div>
-                   <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Anexar Nota (PDF/Imagem)</label>
-                   <label className="flex items-center gap-3 px-3 py-2.5 bg-bg-main border border-dashed border-border-base rounded-sm cursor-pointer hover:border-primary transition-colors group">
-                     <FileText className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors shrink-0" />
-                     <span className="text-xs text-text-muted group-hover:text-text-base transition-colors truncate">
-                       {invoiceFile ? invoiceFile.name : 'Clique para selecionar arquivo...'}
-                     </span>
-                     <input
-                       type="file"
-                       name="invoiceFile"
-                       accept=".pdf,.jpg,.jpeg,.png"
-                       className="hidden"
-                       onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+               </button>
+
+               {/* Campos fiscais */}
+               {showFiscalInfo && (
+                 <div className="border border-primary/30 rounded-sm overflow-hidden bg-primary/5">
+                   <div className="bg-primary/10 px-4 py-2.5 border-b border-primary/20 flex items-center gap-2">
+                     <FileText className="w-3.5 h-3.5 text-primary" />
+                     <span className="text-[10px] font-black uppercase tracking-widest text-primary">Informação Fiscal da Nota</span>
+                   </div>
+                   <div className="p-4 space-y-3">
+                     <div className="grid grid-cols-2 gap-3">
+                       <Input
+                         id="invoiceNumber"
+                         name="invoiceNumber"
+                         label="Número da Nota"
+                         placeholder="Ex: 000123"
+                         defaultValue={(editingMovement as any)?.invoiceNumber || ''}
+                       />
+                       <Input
+                         id="invoiceSeries"
+                         name="invoiceSeries"
+                         label="Série"
+                         placeholder="Ex: 001"
+                         defaultValue={(editingMovement as any)?.invoiceSeries || ''}
+                       />
+                     </div>
+                     <Input
+                       id="invoiceSupplier"
+                       name="invoiceSupplier"
+                       label="Fornecedor"
+                       placeholder="Ex: MedSul Distribuídora"
+                       defaultValue={(editingMovement as any)?.invoiceSupplier || (modalSelectedItemId ? items.find(i => i.id === modalSelectedItemId)?.supplier : '') || ''}
                      />
-                   </label>
-                   {invoiceFile && (
-                     <button
-                       type="button"
-                       onClick={() => setInvoiceFile(null)}
-                       className="mt-1 text-[10px] text-rose-500 hover:underline font-bold"
-                     >
-                       Remover arquivo
-                     </button>
-                   )}
-                   {(editingMovement as any)?.invoiceAttachmentUrl && !invoiceFile && (
-                     <a
-                       href={(editingMovement as any).invoiceAttachmentUrl}
-                       target="_blank"
-                       rel="noreferrer"
-                       className="mt-1 flex items-center gap-1 text-[10px] text-primary hover:underline font-bold"
-                     >
-                       <Eye className="w-3 h-3" /> Ver nota anexada
-                     </a>
-                   )}
+                     <div className="grid grid-cols-2 gap-3">
+                       <Input
+                         id="invoiceIssueDate"
+                         name="invoiceIssueDate"
+                         label="Data de Emissão"
+                         type="date"
+                         defaultValue={(editingMovement as any)?.invoiceIssueDate || ''}
+                       />
+                       <Input
+                         id="invoiceTotalValue"
+                         name="invoiceTotalValue"
+                         label="Valor Total (R$)"
+                         type="number"
+                         placeholder="0,00"
+                         defaultValue={(editingMovement as any)?.invoiceTotalValue || ''}
+                       />
+                     </div>
+                     {/* Anexo da Nota */}
+                     <div>
+                       <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Anexar Nota (PDF/Imagem)</label>
+                       <label className="flex items-center gap-3 px-3 py-2.5 bg-bg-main border border-dashed border-border-base rounded-sm cursor-pointer hover:border-primary transition-colors group">
+                         <FileText className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors shrink-0" />
+                         <span className="text-xs text-text-muted group-hover:text-text-base transition-colors truncate">
+                           {invoiceFile ? invoiceFile.name : 'Clique para selecionar arquivo...'}
+                         </span>
+                         <input
+                           type="file"
+                           name="invoiceFile"
+                           accept=".pdf,.jpg,.jpeg,.png"
+                           className="hidden"
+                           onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+                         />
+                       </label>
+                       {invoiceFile && (
+                         <button
+                           type="button"
+                           onClick={() => setInvoiceFile(null)}
+                           className="mt-1 text-[10px] text-rose-500 hover:underline font-bold"
+                         >
+                           Remover arquivo
+                         </button>
+                       )}
+                       {(editingMovement as any)?.invoiceAttachmentUrl && !invoiceFile && (
+                         <a
+                           href={(editingMovement as any).invoiceAttachmentUrl}
+                           target="_blank"
+                           rel="noreferrer"
+                           className="mt-1 flex items-center gap-1 text-[10px] text-primary hover:underline font-bold"
+                         >
+                           <Eye className="w-3 h-3" /> Ver nota anexada
+                         </a>
+                       )}
+                     </div>
+                   </div>
                  </div>
-               </div>
+               )}
              </div>
            )}
 
