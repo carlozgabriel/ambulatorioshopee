@@ -6,10 +6,11 @@ const getApiKey = () => {
   const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
               process.env.VITE_GEMINI_API_KEY ||
               process.env.GEMINI_API_KEY ||
-              ""; // Chave fixa removida por segurança (leaked)
+              "";
   
   if (key && key.trim().startsWith("AIza")) {
-    console.log("Shopito: Conexão com Google Gemini preparada.");
+    const maskedKey = `${key.trim().substring(0, 6)}...${key.trim().substring(key.trim().length - 4)}`;
+    console.log(`Shopito: Conexão com Google Gemini preparada. (Key: ${maskedKey})`);
     return key.trim();
   }
   return "";
@@ -17,7 +18,7 @@ const getApiKey = () => {
 
 
 const API_KEY = getApiKey();
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
 
 

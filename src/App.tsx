@@ -1696,25 +1696,56 @@ export default function App() {
         <div className="p-3 border-t border-border-base space-y-1">
           <button
             onClick={toggleTheme}
-                <div className="flex items-center gap-3 px-4 py-2 bg-surface border border-border-base rounded-lg shadow-sm mr-4">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black text-xs uppercase">
-                    {profile.name.charAt(0)}
-                  </div>
-                  <div className="hidden lg:block leading-none text-left">
-                    <p className="text-[10px] font-black text-text-base uppercase truncate max-w-[100px]">{profile.name}</p>
-                    <p className="text-[8px] font-bold text-text-muted uppercase mt-0.5 italic">{profile.role}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </header>
+            className="w-full flex items-center gap-3 px-4 py-4 rounded-sm text-text-muted hover:bg-surface-variant/50 transition-all group relative"
+          >
+            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+            {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">Alternar Tema</span>}
+          </button>
+          <button
+            onClick={() => signOut(auth)}
+            className="w-full flex items-center gap-3 px-4 py-4 rounded-sm text-text-muted hover:bg-red-500/10 hover:text-red-500 transition-all group relative"
+          >
+            <LogOut className="w-5 h-5" />
+            {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">Encerrar Sessão</span>}
+          </button>
+        </div>
 
+        {/* Botão de Toggle */}
+        <button
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all z-30"
+        >
+          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </motion.aside>
+
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="h-16 border-b border-border-base bg-surface/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary italic">Módulo</p>
+            <h2 className="text-xl font-black italic uppercase tracking-tighter text-text-base leading-none">
+              {activeTab === 'dashboard' && 'Visão Geral'}
+              {activeTab === 'items' && 'Catálogo'}
+              {activeTab === 'stock' && 'Estoque Real'}
+              {activeTab === 'movements' && 'Movimentações'}
+              {activeTab === 'reports' && 'Relatórios IA'}
+            </h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-black uppercase italic text-text-base">{profile?.name || 'Usuário'}</span>
+            <div className="w-9 h-9 rounded-sm bg-primary flex items-center justify-center text-white font-black italic">
+              {profile?.name?.charAt(0) || 'S'}
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-background">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="pb-20"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
           >
            {activeTab === 'dashboard' && <Dashboard 
              items={items} 
