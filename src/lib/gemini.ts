@@ -1,59 +1,44 @@
 import { InventoryItem, Movement, Category } from "../types";
 
-// Configurações do OpenRouter
+// Configurações do Google Gemini (Direto)
 const getApiKey = () => {
-  const key = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || 
-              (import.meta as any).env?.OPENROUTER_API_KEY || 
-              "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";
-  
-  if (key && key.trim().startsWith("sk-or-v1")) {
-
-    console.log("Shopito: Chave de API carregada com sucesso.");
-    return key.trim();
-  }
-  console.warn("Shopito: Chave de API não encontrada ou inválida.");
+  const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
+              (import.meta as any).env?.GEMINI_API_KEY ||
+              ""; // Removida chave fixa para segurança
   return key?.trim();
 };
 
-const OPENROUTER_API_KEY = getApiKey();
-const OPENROUTER_MODEL = "google/gemini-2.0-flash-exp:free";
+const API_KEY = getApiKey();
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
-
-async function callOpenRouter(prompt: string): Promise<string> {
-  if (!OPENROUTER_API_KEY) {
-    console.error("OpenRouter API Key não encontrada.");
+async function callGemini(prompt: string): Promise<string> {
+  if (!API_KEY) {
+    console.error("Shopito: API Key do Gemini não encontrada.");
     throw new Error("Chave de API ausente.");
   }
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const response = await fetch(GEMINI_URL, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": typeof window !== 'undefined' ? window.location.origin : "http://localhost:3000",
-        "X-Title": "Ambulatorio Shopee AI"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [{ role: "user", content: prompt }],
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
       })
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-      console.error("OpenRouter Error Details:", err);
-      throw new Error(`OpenRouter error: ${response.status} - ${err.error?.message || "Unknown error"}`);
+      const err = await response.json();
+      throw new Error(`Gemini Error: ${response.status} - ${err.error?.message || "Unknown error"}`);
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } catch (error) {
-    console.error("OpenRouter Call Error:", error);
+    console.error("Shopito Call Error:", error);
     throw error;
   }
 }
-
 
 export const generateInventoryInsights = async (
   items: InventoryItem[],
@@ -69,30 +54,20 @@ export const generateInventoryInsights = async (
     minimo: i.minQuantity || 5
   }));
 
-  const recentMovements = movements
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 15)
-    .map(m => ({
-      tipo: m.type,
-      item: items.find(i => i.id === m.itemId)?.name || 'Desconhecido',
-      qtd: m.quantity
-    }));
-
   const prompt = `
     Você é o Shopito, o assistente inteligente do Ambulatório Shopee. 
-    Abaixo estão os dados do estoque. Gere um insight curto (max 280 caracteres).
+    Analise o estoque e gere um insight curto (max 280 caracteres).
     Foque em reposição e padrões. Seja direto e prestativo.
     
     ESTOQUE: ${JSON.stringify(stockSummary)}
-    MOVIMENTAÇÕES: ${JSON.stringify(recentMovements)}
     
-    Responda em Português do Brasil.
+    Responda em Português do Brasil de forma amigável.
   `;
 
   try {
-    return await callOpenRouter(prompt);
+    return await callGemini(prompt);
   } catch (error) {
-    return "Ops! O Shopito teve um contratempo ao analisar os dados no OpenRouter.";
+    return "Ops! O Shopito teve um contratempo. Verifique se a chave do Gemini está correta na Vercel.";
   }
 };
 
@@ -112,17 +87,17 @@ export const generateCustomReport = async (
       cat: categories.find(c => c.id === i.categoryId)?.name || 'Geral',
       saldo: i.currentQuantity
     })))}
-    - Movimentações (últimas 30): ${JSON.stringify(movements.slice(0, 30))}
     
     Responda de forma organizada em Markdown. Seja preciso.
   `;
 
   try {
-    return await callOpenRouter(prompt);
+    return await callGemini(prompt);
   } catch (error) {
-    return "Erro ao gerar relatório via OpenRouter.";
+    return "Erro ao gerar relatório com o Gemini.";
   }
 };
+
 
 
 
