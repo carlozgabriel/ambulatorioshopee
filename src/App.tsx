@@ -838,6 +838,11 @@ interface ReportsViewProps {
   items: InventoryItem[];
   movements: Movement[];
   categories: Category[];
+  aiInsight: string;
+  isLoadingInsight: boolean;
+  fetchAiInsight: () => void;
+  stats: any;
+  profile: UserProfile | null;
 }
 
 const Dashboard = ({ 
@@ -1844,7 +1849,12 @@ interface ReportsViewProps {
 const ReportsView = ({
   items,
   movements,
-  categories
+  categories,
+  aiInsight,
+  isLoadingInsight,
+  fetchAiInsight,
+  stats,
+  profile
 }: ReportsViewProps) => {
   const [query, setQuery] = useState('');
   const [currentReport, setCurrentReport] = useState<string | null>(null);
@@ -1884,19 +1894,98 @@ const ReportsView = ({
     document.body.removeChild(element);
   };
 
+  const financialStats = useMemo(() => {
+    const entradas = movements.filter(m => m.type === 'ENTRADA');
+    return {
+      totalInvested: entradas.reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0),
+      totalEntries: entradas.length
+    };
+  }, [movements]);
+
   return (
-    <div className="relative h-[calc(100vh-140px)] flex flex-col">
-      {/* Header de Ações */}
-      <div className="flex justify-between items-center mb-4 bg-surface/50 p-2 rounded-sm border border-border-base">
-        <div className="flex gap-2">
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 bg-primary text-white font-black uppercase italic rounded-sm shadow-lg hover:bg-accent transition-all flex items-center gap-2 text-xs"
-          >
-            <Sparkles className="w-4 h-4" />
-            Solicitar Nova Análise
-          </button>
+    <div className="space-y-6">
+      {/* Shopito AI Strategic Card */}
+      <Card className="border-none shadow-xl bg-gradient-to-br from-primary via-primary-dark to-black text-white overflow-hidden relative group">
+        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
+          <Sparkles className="w-32 h-32 rotate-12" />
         </div>
+        <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
+            <img 
+              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+              alt="Shopito" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Reports</span>
+              {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
+            </div>
+            <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insight Analítico Geral</h3>
+            <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+                  <span className="text-xs uppercase font-black opacity-50 ml-2">Analisando dados...</span>
+                </div>
+              ) : (
+                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para uma análise rápida dos dados atuais!"}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button 
+              variant="outline" 
+              onClick={fetchAiInsight}
+              disabled={isLoadingInsight}
+              className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-4 backdrop-blur-md disabled:opacity-50"
+            >
+              Atualizar Insights
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={() => setIsModalOpen(true)}
+              disabled={isGenerating}
+              className="bg-white text-primary hover:bg-white/90 font-black text-[10px] uppercase h-10 px-6 shrink-0"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Solicitar Relatório IA
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* KPI Section */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total no Catálogo', value: stats.totalItems || items.length, icon: Box, color: 'text-primary' },
+          { label: 'Itens em Alerta', value: stats.lowStock || items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length, icon: AlertTriangle, color: 'text-rose-500' },
+          { label: 'Total Investido', value: `R$ ${(financialStats.totalInvested / 1000).toFixed(1)}k`, icon: DollarSign, color: 'text-emerald-500' },
+          { label: 'Movimentações', value: movements.length, icon: History, color: 'text-secondary' },
+        ].map((stat, i) => (
+          <Card key={i} className="p-4 border shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
+              <p className={cn("text-xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
+            </div>
+            <div className="p-2 rounded-lg bg-bg-main">
+              <stat.icon className={cn("w-5 h-5", stat.color)} />
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex flex-col flex-1 min-h-0 bg-surface border border-border-base rounded-sm overflow-hidden">
+        {/* Header de Ações */}
+        <div className="flex justify-between items-center p-3 border-b border-border-base bg-surface-variant/10">
+          <h3 className="text-xs font-black uppercase tracking-widest text-text-muted flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Visualizador de Relatório
+          </h3>
 
         {currentReport && (
           <div className="flex gap-2">
@@ -2874,6 +2963,11 @@ export default function App() {
              items={items} 
              movements={movements} 
              categories={categories} 
+             aiInsight={aiInsight}
+             isLoadingInsight={isLoadingInsight}
+             fetchAiInsight={fetchAiInsight}
+             stats={stats}
+             profile={profile}
            />}
            {activeTab === 'movements' && (
              <div className="space-y-6">
