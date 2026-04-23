@@ -5,6 +5,7 @@ import {
   googleProvider, 
   auth, 
   db, 
+  storage,
   collection, 
   onSnapshot, 
   query, 
@@ -17,6 +18,9 @@ import {
   getDoc,
   getDocs,
   where,
+  ref,
+  uploadBytes,
+  getDownloadURL,
   OperationType, 
   handleFirestoreError,
   FirebaseUser,
@@ -50,6 +54,7 @@ import {
   Calendar,
   User,
   Tag,
+  MapPin,
   Stethoscope,
   ShoppingBag,
   ChevronRight,
@@ -204,7 +209,157 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose:
   </AnimatePresence>
 );
 
+
+const AdminGlobalDashboard = ({ unities, items, movements, categories, setActiveTab }: { 
+  unities: Unity[], 
+  items: InventoryItem[], 
+  movements: Movement[], 
+  categories: Category[],
+  setActiveTab: (tab: any) => void 
+}) => {
+  const stats = {
+    totalUnits: unities.length,
+    lowStockTotal: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 0)).length,
+    criticalItems: items.filter(i => (i.currentQuantity || 0) === 0).length,
+  };
+
+  // Agrupar consumo por unidade
+  const consumptionByUnity = unities.map(u => {
+    const uMovements = movements.filter(m => m.unityId === u.id && m.type === 'SAIDA');
+    const total = uMovements.reduce((sum, m) => sum + m.quantity, 0);
+    return { name: u.name, total };
+  }).sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="p-6 bg-gradient-to-br from-primary/10 to-transparent border-primary/20">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-primary rounded-lg text-white">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Total de Unidades</p>
+              <h3 className="text-2xl font-black text-text-base italic">{stats.totalUnits}</h3>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-6 bg-gradient-to-br from-rose-500/10 to-transparent border-rose-500/20">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-rose-500 rounded-lg text-white">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Itens em Alerta</p>
+              <h3 className="text-2xl font-black text-text-base italic">{stats.lowStockTotal}</h3>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-6 bg-gradient-to-br from-amber-500/10 to-transparent border-amber-500/20">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-amber-500 rounded-lg text-white">
+              <Package className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Panorama Geral</p>
+              <h3 className="text-2xl font-black text-text-base italic">{items.length} Insumos</h3>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            Consumo por Unidade (Total de Saídas)
+          </h3>
+          <div className="space-y-4">
+            {consumptionByUnity.map((u, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-black uppercase">
+                  <span>{u.name}</span>
+                  <span className="text-primary">{u.total} un</span>
+                </div>
+                <div className="h-2 bg-bg-main rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, (u.total / (consumptionByUnity[0].total || 1)) * 100)}%` }}
+                    className="h-full bg-primary"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-500" />
+            Unidades com Estoque Crítico
+          </h3>
+          <div className="space-y-3">
+            {unities.map(u => {
+              const uItems = items.filter(i => i.unityId === u.id);
+              const low = uItems.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 0)).length;
+              if (low === 0) return null;
+              return (
+                <div key={u.id} className="flex items-center justify-between p-3 bg-bg-main border border-border-base rounded-sm group hover:border-rose-500/50 transition-colors">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-tight text-text-base">{u.name}</p>
+                    <p className="text-[8px] font-bold text-rose-500 uppercase">{low} itens abaixo do mínimo</p>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => { setActiveTab('stock'); /* logic to filter */ }} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    VER ESTOQUE
+                  </Button>
+                </div>
+              );
+            }).filter(Boolean)}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+const UnitsView = ({ unities, onNewUnit }: { unities: Unity[], onNewUnit: () => void }) => (
+  <div className="space-y-6">
+    <div className="flex justify-between items-center">
+      <div className="flex flex-col">
+        <p className="text-[10px] font-black uppercase tracking-widest text-primary italic leading-tight">Gestão</p>
+        <h2 className="text-2xl font-black italic uppercase tracking-tighter text-text-base leading-none">Unidades de Atendimento</h2>
+      </div>
+      <Button onClick={onNewUnit} className="bg-primary text-white font-black uppercase tracking-widest text-[10px] py-4 px-6 shadow-xl shadow-primary/20">
+        + Registrar Novo Ambulatório
+      </Button>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {unities.map(u => (
+        <Card key={u.id} className="p-6 hover:border-primary/50 transition-all cursor-pointer group relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-3">
+            <Building2 className="w-8 h-8 text-primary/10 group-hover:text-primary/20 transition-colors" />
+          </div>
+          <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{u.company}</p>
+          <h3 className="text-xl font-black text-text-base uppercase italic mb-4">{u.name}</h3>
+          <div className="space-y-2 border-t border-border-base pt-4">
+            <div className="flex items-center gap-2 text-text-muted">
+              <User className="w-3 h-3" />
+              <span className="text-[10px] font-bold uppercase tracking-tight truncate">{u.responsibleEmails.join(', ')}</span>
+            </div>
+            <div className="flex items-center gap-2 text-text-muted">
+              <MapPin className="w-3 h-3" />
+              <span className="text-[10px] font-bold uppercase tracking-tight">{u.region}</span>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  </div>
+);
+
 // --- Component Props Interfaces ---
+
 
 interface DashboardProps {
   items: InventoryItem[];
@@ -245,6 +400,9 @@ interface StockViewProps {
   setMovementType: (type: 'ENTRADA' | 'SAIDA') => void;
   setSelectedItemForMovement: (item: InventoryItem | null) => void;
   setIsMovementModalOpen: (open: boolean) => void;
+  profile: UserProfile | null;
+  activeUnityId: string | null;
+  unities: Unity[];
 }
 
 interface ReportsViewProps {
@@ -866,7 +1024,10 @@ const StockView = ({
   categories,
   setMovementType,
   setSelectedItemForMovement,
-  setIsMovementModalOpen
+  setIsMovementModalOpen,
+  profile,
+  activeUnityId,
+  unities
 }: StockViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewType, setViewType] = useState<'grid' | 'table'>('table');
@@ -1035,22 +1196,24 @@ const StockView = ({
                       </div>
                     </div>
                     
-                    <div className="flex gap-2 mt-auto pt-3 border-t border-border-base">
-                      <Button 
-                        variant="outline"
-                        className="flex-1 text-[9px] h-8 border-border-base hover:border-primary hover:text-primary" 
-                        onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                      >
-                        + Entrada
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        className="flex-1 text-[9px] h-8 border-border-base hover:border-danger hover:text-danger" 
-                        onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                      >
-                        - Saída
-                      </Button>
-                    </div>
+                    {profile?.role !== 'admin' && (
+                      <div className="flex gap-2 mt-auto pt-3 border-t border-border-base">
+                        <Button 
+                          variant="outline"
+                          className="flex-1 text-[9px] h-8 border-border-base hover:border-primary hover:text-primary" 
+                          onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                        >
+                          + Entrada
+                        </Button>
+                        <Button 
+                          variant="outline"
+                          className="flex-1 text-[9px] h-8 border-border-base hover:border-danger hover:text-danger" 
+                          onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                        >
+                          - Saída
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </Card>
               ))}
@@ -1066,7 +1229,8 @@ const StockView = ({
                           <th className="px-5 py-3 border-b border-border-base text-center">Saldo</th>
                           <th className="px-5 py-3 border-b border-border-base text-center">Mínimo</th>
                           <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
-                          <th className="px-5 py-3 border-b border-border-base text-right font-black">Ações</th>
+                           <th className="px-5 py-3 border-b border-border-base text-right font-black">{profile?.role !== 'admin' ? 'Ações' : ''}</th>
+                           {!activeUnityId && <th className="px-5 py-3 border-b border-border-base">Unidade</th>}
                        </tr>
                     </thead>
                     <tbody className="divide-y divide-border-base">
@@ -1089,24 +1253,31 @@ const StockView = ({
                                    {item.minQuantity || 5}
                                 </td>
                                 <td className="px-5 py-3 text-text-muted uppercase font-bold text-[9px]">{item.supplier || '-'}</td>
-                                <td className="px-5 py-3 text-right">
-                                   <div className="flex justify-end gap-1">
-                                      <button 
-                                        className="p-1.5 hover:bg-primary/10 text-primary transition-colors rounded-sm"
-                                        onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                                        title="Entrada"
-                                      >
-                                         <Plus className="w-4 h-4" />
-                                      </button>
-                                      <button 
-                                        className="p-1.5 hover:bg-rose-500/10 text-rose-500 transition-colors rounded-sm"
-                                        onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                                        title="Saída"
-                                      >
-                                         <Minus className="w-4 h-4" />
-                                      </button>
-                                   </div>
-                                </td>
+                                 <td className="px-5 py-3 text-right">
+                                    {profile?.role !== 'admin' && (
+                                       <div className="flex justify-end gap-1">
+                                          <button 
+                                            className="p-1.5 hover:bg-primary/10 text-primary transition-colors rounded-sm"
+                                            onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                            title="Entrada"
+                                          >
+                                             <Plus className="w-4 h-4" />
+                                          </button>
+                                          <button 
+                                            className="p-1.5 hover:bg-rose-500/10 text-rose-500 transition-colors rounded-sm"
+                                            onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                            title="Saída"
+                                          >
+                                             <Minus className="w-4 h-4" />
+                                          </button>
+                                       </div>
+                                    )}
+                                 </td>
+                                 {!activeUnityId && (
+                                   <td className="px-5 py-3 text-[9px] font-bold text-primary uppercase">
+                                     {unities.find(u => u.id === item.unityId)?.name || 'N/A'}
+                                   </td>
+                                 )}
                              </tr>
                           );
                        })}
@@ -1423,17 +1594,34 @@ export default function App() {
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unity | null>(null);
   const [selectedItemForMovement, setSelectedItemForMovement] = useState<InventoryItem | null>(null);
   const [movementType, setMovementType] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
   const [selectedItemForIndication, setSelectedItemForIndication] = useState<InventoryItem | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [unitFormData, setUnitFormData] = useState({
+    name: '',
+    company: '',
+    city: '',
+    state: '',
+    responsibleEmails: ''
+  });
+
   const [editingMovement, setEditingMovement] = useState<Movement | null>(null);
 
   const [aiInsight, setAiInsight] = useState<string>("");
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
   const [movementToDelete, setMovementToDelete] = useState<Movement | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // States for movement modal search & invoice
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
+  const [modalSelectedItemId, setModalSelectedItemId] = useState<string>('');
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
 
   const handleDeleteMovement = (movement: Movement) => {
     setMovementToDelete(movement);
@@ -1532,27 +1720,103 @@ export default function App() {
     setLoginError('');
     setLoading(true);
 
-    // Se o usuário não digitar um email completo, assume o domínio @c3.com.br
     const emailToUse = username.includes('@') ? username : `${username}@c3.com.br`;
 
     try {
-      await signInWithEmailAndPassword(auth, emailToUse, password);
-    } catch (error: any) {
-      console.error("Erro no login:", error);
-      
-      // Se o usuário for o admin que queremos criar e ele não existir, tenta criar
-      if (error.code === 'auth/user-not-found' && emailToUse === 'adminc3ambulatorio@c3.com.br' && password === 'Admin@c3') {
+      // 1. Verificar se é o admin master
+      if (emailToUse === 'adminc3ambulatorio@c3.com.br' && password === 'Admin@c3') {
         try {
-          await createUserWithEmailAndPassword(auth, emailToUse, password);
-          return; // onAuthStateChanged cuidará do resto
-        } catch (createErr: any) {
-          setLoginError('Erro ao criar conta admin: ' + createErr.message);
+          await signInWithEmailAndPassword(auth, emailToUse, password);
+          return;
+        } catch (err: any) {
+          if (err.code === 'auth/user-not-found') {
+             await createUserWithEmailAndPassword(auth, emailToUse, password);
+             return;
+          }
+          throw err;
         }
-      } else {
-        setLoginError('Usuário ou senha incorretos.');
       }
+
+      // 2. Buscar unidade para usuário comum ou outros admins
+      const unitiesRef = collection(db, 'unities');
+      const q = query(unitiesRef, where('responsibleEmails', 'array-contains', emailToUse));
+      const unitySnap = await getDocs(q);
+
+      if (unitySnap.empty) {
+        // Se não achar na unidade, talvez seja um admin global não cadastrado na lista master?
+        // Por enquanto, apenas tenta logar normal se já tiver conta
+        await signInWithEmailAndPassword(auth, emailToUse, password);
+      } else {
+        const uData = unitySnap.docs[0].data() as Unity;
+        const expectedPass = uData.name.toLowerCase().replace(/\s+/g, '') + '@c3';
+        
+        if (password !== expectedPass) {
+          setLoginError('Senha incorreta para esta unidade.');
+          setLoading(false);
+          return;
+        }
+
+        try {
+          await signInWithEmailAndPassword(auth, emailToUse, password);
+        } catch (err: any) {
+          if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+            // Se o usuário está na unidade e usou a senha certa, mas não tem conta no Firebase, cria.
+            await createUserWithEmailAndPassword(auth, emailToUse, password);
+          } else {
+            throw err;
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error("Erro no login:", error.code, error.message);
+      let msg = 'Falha na autenticação.';
+      if (error.code === 'permission-denied') {
+        msg = 'Erro de permissão ao verificar unidade. Contate o suporte.';
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        msg = 'Senha incorreta.';
+      } else if (error.code === 'auth/user-not-found') {
+        msg = 'Usuário não cadastrado.';
+      } else {
+        msg = 'Erro de conexão ou sistema.';
+      }
+      setLoginError(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteUnit = async (unit: Unity) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a unidade ${unit.name}?`)) return;
+    try {
+      await deleteDoc(doc(db, 'unities', unit.id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'unities');
+    }
+  };
+
+  const handleSaveUnit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const data = {
+        name: unitFormData.name,
+        company: unitFormData.company,
+        city: unitFormData.city,
+        state: unitFormData.state,
+        responsibleEmails: unitFormData.responsibleEmails.split(',').map(e => e.trim()).filter(Boolean),
+        updatedAt: new Date().toISOString()
+      };
+
+      if (editingUnit) {
+        await updateDoc(doc(db, 'unities', editingUnit.id), data);
+      } else {
+        await addDoc(collection(db, 'unities'), {
+          ...data,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setIsUnitModalOpen(false);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'unities');
     }
   };
 
@@ -1575,6 +1839,19 @@ export default function App() {
     }
   }, [activeTab, items]);
 
+  // Sync modal state when opened/closed
+  useEffect(() => {
+    if (isMovementModalOpen) {
+      const initId = editingMovement?.itemId || selectedItemForMovement?.id || '';
+      setModalSelectedItemId(initId);
+      const initItem = items.find(i => i.id === initId);
+      setItemSearchQuery(initItem?.name || '');
+      setIsItemDropdownOpen(false);
+      setInvoiceFile(null);
+    }
+  }, [isMovementModalOpen]);
+
+
   // --- Registro de Movimentação (com suporte multi-unidade) ---
   const registerMovement = async (data: {
     itemId: string;
@@ -1583,6 +1860,11 @@ export default function App() {
     lotNumber: string;
     expirationDate: string;
     notes?: string;
+    invoiceNumber?: string;
+    invoiceSeries?: string;
+    invoiceSupplier?: string;
+    invoiceIssueDate?: string;
+    invoiceTotalValue?: number;
   }) => {
     if (!user || !profile) return;
 
@@ -1671,7 +1953,20 @@ export default function App() {
         await updateDoc(itemRef, { currentQuantity: newTotal });
       }
 
-      // 3. Registrar o documento de movimentação
+      // 3. Upload do arquivo de nota fiscal (se houver)
+      let invoiceAttachmentUrl: string | undefined;
+      if (invoiceFile && data.type === 'ENTRADA') {
+        setIsUploadingFile(true);
+        try {
+          const storageRef = ref(storage, `invoices/${unityIdToUse}/${Date.now()}_${invoiceFile.name}`);
+          const snapshot = await uploadBytes(storageRef, invoiceFile);
+          invoiceAttachmentUrl = await getDownloadURL(snapshot.ref);
+        } finally {
+          setIsUploadingFile(false);
+        }
+      }
+
+      // 4. Registrar o documento de movimentação
       const movementDoc: Omit<Movement, 'id'> = {
         type: data.type,
         itemId: data.itemId,
@@ -1683,6 +1978,14 @@ export default function App() {
         timestamp: new Date().toISOString(),
         notes: data.notes || '',
         unityId: unityIdToUse,
+        ...(data.type === 'ENTRADA' && {
+          invoiceNumber: data.invoiceNumber || '',
+          invoiceSeries: data.invoiceSeries || '',
+          invoiceSupplier: data.invoiceSupplier || '',
+          invoiceIssueDate: data.invoiceIssueDate || '',
+          invoiceTotalValue: data.invoiceTotalValue || 0,
+          invoiceAttachmentUrl: invoiceAttachmentUrl || '',
+        }),
       };
       await addDoc(collection(db, 'movements'), movementDoc);
 
@@ -1706,7 +2009,7 @@ export default function App() {
           const userRef = doc(db, 'users', u.uid);
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
-            const adminEmails = ['carlosgabriel.camppos@gmail.com', 'adminc3ambulatorio@c3.com.br'];
+            const adminEmails = ['adminc3ambulatorio@c3.com.br'];
             const newProfile: Omit<UserProfile, 'id'> = {
               name: u.displayName || (u.email?.split('@')[0]) || 'Sem Nome',
               email: u.email || '',
@@ -1980,19 +2283,34 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
           >
-           {activeTab === 'dashboard' && <Dashboard 
-             items={items} 
-             movements={movements} 
-             categories={categories} 
-             stats={stats} 
-             topConsumedItems={topConsumedItems} 
-             aiInsight={aiInsight} 
-             isLoadingInsight={isLoadingInsight} 
-             fetchAiInsight={fetchAiInsight} 
-             setActiveTab={setActiveTab} 
-             expiringBatches={expiringBatches} 
-             theme={theme} 
-           />}
+           {activeTab === 'dashboard' && (
+             profile?.role === 'admin' && !activeUnityId ? (
+               <AdminGlobalDashboard 
+                 unities={unities} 
+                 items={items} 
+                 movements={movements} 
+                 categories={categories}
+                 setActiveTab={setActiveTab}
+               />
+             ) : (
+               <Dashboard 
+                 items={items} 
+                 movements={movements} 
+                 categories={categories} 
+                 stats={stats} 
+                 topConsumedItems={topConsumedItems} 
+                 aiInsight={aiInsight} 
+                 isLoadingInsight={isLoadingInsight} 
+                 fetchAiInsight={fetchAiInsight} 
+                 setActiveTab={setActiveTab} 
+                 expiringBatches={expiringBatches} 
+                 theme={theme} 
+               />
+             )
+           )}
+           {activeTab === 'units' && profile?.role === 'admin' && (
+             <UnitsView unities={unities} onNewUnit={() => setIsUnitModalOpen(true)} />
+           )}
            {activeTab === 'items' && <ItemsView 
              items={items} 
              categories={categories} 
@@ -2012,6 +2330,9 @@ export default function App() {
              setMovementType={setMovementType}
              setSelectedItemForMovement={setSelectedItemForMovement}
              setIsMovementModalOpen={setIsMovementModalOpen}
+             profile={profile}
+             activeUnityId={activeUnityId}
+             unities={unities}
            />}
            {activeTab === 'reports' && <ReportsView 
              items={items} 
@@ -2336,27 +2657,75 @@ export default function App() {
         <form className="space-y-4" onSubmit={(e) => {
           e.preventDefault();
           const formData = new FormData(e.target as HTMLFormElement);
+          const totalValStr = formData.get('invoiceTotalValue') as string;
           registerMovement({
-            itemId: formData.get('itemId') as string,
+            itemId: modalSelectedItemId,
             type: movementType,
             quantity: Number(formData.get('qty')),
             lotNumber: formData.get('lot') as string,
             expirationDate: formData.get('expiry') 
               ? new Date(formData.get('expiry') as string).toISOString() 
               : (editingMovement?.timestamp || new Date().toISOString()),
-            notes: formData.get('notes') as string
+            notes: formData.get('notes') as string,
+            invoiceNumber: formData.get('invoiceNumber') as string,
+            invoiceSeries: formData.get('invoiceSeries') as string,
+            invoiceSupplier: formData.get('invoiceSupplier') as string,
+            invoiceIssueDate: formData.get('invoiceIssueDate') as string,
+            invoiceTotalValue: totalValStr ? Number(totalValStr) : undefined,
           });
         }}>
-           <Select 
-             id="itemId" 
-             name="itemId" 
-             label="Item" 
-             defaultValue={editingMovement?.itemId || selectedItemForMovement?.id || ''} 
-             required
-           >
-              <option value="">Selecione um item...</option>
-              {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-           </Select>
+
+           {/* ── Busca de Item com Lupa ── */}
+           <div>
+             <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Item</label>
+             <div className="relative">
+               <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
+                 <Search className="w-4 h-4" />
+               </div>
+               <input
+                 type="text"
+                 value={itemSearchQuery}
+                 onChange={(e) => { setItemSearchQuery(e.target.value); setIsItemDropdownOpen(true); setModalSelectedItemId(''); }}
+                 onFocus={() => setIsItemDropdownOpen(true)}
+                 placeholder="Buscar item pelo nome..."
+                 className="w-full pl-10 pr-4 py-2.5 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base"
+                 autoComplete="off"
+               />
+               {modalSelectedItemId && (
+                 <button
+                   type="button"
+                   onClick={() => { setModalSelectedItemId(''); setItemSearchQuery(''); setIsItemDropdownOpen(true); }}
+                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-rose-500 transition-colors"
+                 >
+                   <XCircle className="w-4 h-4" />
+                 </button>
+               )}
+             </div>
+             {isItemDropdownOpen && (() => {
+               const filtered = items.filter(i => i.name.toLowerCase().includes(itemSearchQuery.toLowerCase()));
+               return filtered.length > 0 ? (
+                 <div className="absolute z-50 mt-1 w-auto min-w-[300px] max-w-lg bg-surface border border-border-base rounded-sm shadow-2xl max-h-52 overflow-y-auto custom-scrollbar">
+                   {filtered.map(i => (
+                     <button
+                       key={i.id}
+                       type="button"
+                       onClick={() => { setModalSelectedItemId(i.id); setItemSearchQuery(i.name); setIsItemDropdownOpen(false); }}
+                       className="w-full text-left px-4 py-2.5 hover:bg-primary/10 hover:text-primary transition-colors text-sm font-semibold text-text-base border-b border-border-base last:border-b-0"
+                     >
+                       <span className="font-black uppercase italic text-xs">{i.name}</span>
+                       <span className="ml-2 text-[10px] text-text-muted font-normal">{i.unit}</span>
+                     </button>
+                   ))}
+                 </div>
+               ) : null;
+             })()}
+             {/* Hidden input to validate required */}
+             <input type="hidden" name="itemId" value={modalSelectedItemId} required />
+             {!modalSelectedItemId && itemSearchQuery && (
+               <p className="text-xs text-rose-500 mt-1 font-bold">Selecione um item da lista.</p>
+             )}
+           </div>
+
            <div className="grid grid-cols-2 gap-4">
               <Input 
                 id="qty" 
@@ -2376,6 +2745,7 @@ export default function App() {
                 required 
               />
            </div>
+
            {(movementType === 'ENTRADA' || (editingMovement && editingMovement.type === 'ENTRADA')) && (
               <Input 
                 id="expiry" 
@@ -2386,17 +2756,112 @@ export default function App() {
                 required 
               />
            )}
+
            <Input 
              id="notes" 
              name="notes" 
              label="Observações (Opcional)" 
              defaultValue={editingMovement?.notes || ''} 
            />
+
+           {/* ── Informação Fiscal (apenas Entrada) ── */}
+           {(movementType === 'ENTRADA' || (editingMovement && editingMovement.type === 'ENTRADA')) && (
+             <div className="border border-border-base rounded-sm overflow-hidden">
+               <div className="bg-bg-main px-4 py-2.5 border-b border-border-base flex items-center gap-2">
+                 <FileText className="w-3.5 h-3.5 text-primary" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Informação Fiscal</span>
+               </div>
+               <div className="p-4 space-y-3">
+                 <div className="grid grid-cols-2 gap-3">
+                   <Input
+                     id="invoiceNumber"
+                     name="invoiceNumber"
+                     label="Número da Nota"
+                     placeholder="Ex: 000123"
+                     defaultValue={(editingMovement as any)?.invoiceNumber || ''}
+                   />
+                   <Input
+                     id="invoiceSeries"
+                     name="invoiceSeries"
+                     label="Série"
+                     placeholder="Ex: 001"
+                     defaultValue={(editingMovement as any)?.invoiceSeries || ''}
+                   />
+                 </div>
+                 <Input
+                   id="invoiceSupplier"
+                   name="invoiceSupplier"
+                   label="Fornecedor"
+                   placeholder="Ex: MedSul Distribuídora"
+                   defaultValue={(editingMovement as any)?.invoiceSupplier || (modalSelectedItemId ? items.find(i => i.id === modalSelectedItemId)?.supplier : '') || ''}
+                 />
+                 <div className="grid grid-cols-2 gap-3">
+                   <Input
+                     id="invoiceIssueDate"
+                     name="invoiceIssueDate"
+                     label="Data de Emissão"
+                     type="date"
+                     defaultValue={(editingMovement as any)?.invoiceIssueDate || ''}
+                   />
+                   <Input
+                     id="invoiceTotalValue"
+                     name="invoiceTotalValue"
+                     label="Valor Total (R$)"
+                     type="number"
+                     placeholder="0,00"
+                     defaultValue={(editingMovement as any)?.invoiceTotalValue || ''}
+                   />
+                 </div>
+                 {/* Anexo da Nota */}
+                 <div>
+                   <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-1.5">Anexar Nota (PDF/Imagem)</label>
+                   <label className="flex items-center gap-3 px-3 py-2.5 bg-bg-main border border-dashed border-border-base rounded-sm cursor-pointer hover:border-primary transition-colors group">
+                     <FileText className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors shrink-0" />
+                     <span className="text-xs text-text-muted group-hover:text-text-base transition-colors truncate">
+                       {invoiceFile ? invoiceFile.name : 'Clique para selecionar arquivo...'}
+                     </span>
+                     <input
+                       type="file"
+                       name="invoiceFile"
+                       accept=".pdf,.jpg,.jpeg,.png"
+                       className="hidden"
+                       onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+                     />
+                   </label>
+                   {invoiceFile && (
+                     <button
+                       type="button"
+                       onClick={() => setInvoiceFile(null)}
+                       className="mt-1 text-[10px] text-rose-500 hover:underline font-bold"
+                     >
+                       Remover arquivo
+                     </button>
+                   )}
+                   {(editingMovement as any)?.invoiceAttachmentUrl && !invoiceFile && (
+                     <a
+                       href={(editingMovement as any).invoiceAttachmentUrl}
+                       target="_blank"
+                       rel="noreferrer"
+                       className="mt-1 flex items-center gap-1 text-[10px] text-primary hover:underline font-bold"
+                     >
+                       <Eye className="w-3 h-3" /> Ver nota anexada
+                     </a>
+                   )}
+                 </div>
+               </div>
+             </div>
+           )}
+
            <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest italic">
              {editingMovement ? 'Editando como:' : 'Registrando como:'} <b className="text-primary">{profile?.name}</b>
            </p>
-           <Button type="submit" variant={movementType === 'ENTRADA' ? 'primary' : 'danger'} className="w-full py-3">
-              {editingMovement ? 'Salvar Alterações' : `Confirmar ${movementType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
+           <Button
+             type="submit"
+             variant={movementType === 'ENTRADA' ? 'primary' : 'danger'}
+             className="w-full py-3"
+             disabled={isUploadingFile || !modalSelectedItemId}
+           >
+             {isUploadingFile ? 'Enviando arquivo...' : (editingMovement ? 'Salvar Alterações' : `Confirmar ${movementType === 'ENTRADA' ? 'Entrada' : 'Saída'}`)}
            </Button>
         </form>
       </Modal>
@@ -2454,6 +2919,38 @@ export default function App() {
           </div>
         </div>
       </Modal>
+
+      {/* Modal de Nova Unidade */}
+      <Modal
+        isOpen={isUnitModalOpen}
+        onClose={() => setIsUnitModalOpen(false)}
+        title="Registrar Novo Ambulatório"
+      >
+        <form className="space-y-4" onSubmit={async (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target as HTMLFormElement);
+          try {
+            await addDoc(collection(db, 'unities'), {
+              name: formData.get('name') as string,
+              company: formData.get('company') as string,
+              region: formData.get('region') as string,
+              responsibleEmails: (formData.get('emails') as string).split(',').map(email => email.trim()),
+            });
+            setIsUnitModalOpen(false);
+          } catch (err) {
+            handleFirestoreError(err, OperationType.WRITE, 'unities');
+          }
+        }}>
+          <Input id="company" name="company" label="Empresa / Cliente" placeholder="Ex: Shopee" required />
+          <Input id="name" name="name" label="Nome da Unidade" placeholder="Ex: SOC MG2" required />
+          <Input id="region" name="region" label="Região / Localidade" placeholder="Ex: Ribeirão das Neves, MG" required />
+          <Input id="emails" name="emails" label="Emails dos Responsáveis (Separados por vírgula)" placeholder="admin@shopee.com, gerente@shopee.com" required />
+          <Button type="submit" variant="primary" className="w-full py-3">
+            Criar Unidade
+          </Button>
+        </form>
+      </Modal>
+
 
     </div>
   );

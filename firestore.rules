@@ -158,5 +158,10 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAuthenticated();
     }
+
+    match /unities/{unityId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

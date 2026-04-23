@@ -50,6 +50,12 @@ export interface Movement {
   notes?: string;
   unityId: string;
   unitPrice?: number; // Preço no momento da movimentação
+  invoiceNumber?: string;
+  invoiceSeries?: string;
+  invoiceSupplier?: string;
+  invoiceIssueDate?: string;
+  invoiceTotalValue?: number;
+  invoiceAttachmentUrl?: string;
 }
 
 export interface UserProfile {
