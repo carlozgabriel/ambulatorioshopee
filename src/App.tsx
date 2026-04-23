@@ -1981,6 +1981,7 @@ const ReportsView = ({
             <FileText className="w-4 h-4" />
             Visualizador de Relatório
           </h3>
+        </div>
 
         {currentReport && (
           <div className="flex gap-2">
