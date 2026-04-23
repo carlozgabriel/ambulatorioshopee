@@ -1157,115 +1157,124 @@ const ReportsView = ({
   categories
 }: ReportsViewProps) => {
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+  const [currentReport, setCurrentReport] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGenerateReport = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!query.trim() || isGenerating) return;
 
-    const userMsg = query;
-    setQuery('');
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setIsGenerating(true);
-
-    const response = await generateCustomReport(userMsg, items, movements, categories);
-    setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-    setIsGenerating(false);
+    try {
+      const response = await generateCustomReport(query, items, movements, categories);
+      setCurrentReport(response);
+    } catch (error) {
+      setCurrentReport("### Erro na Geração\nNão foi possível conectar ao Shopito. Verifique sua conexão ou a chave da API.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-180px)] space-y-4">
-      <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-border-base rounded-xl bg-surface/50">
-             <motion.div 
-               initial={{ scale: 0.8, opacity: 0 }}
-               animate={{ scale: 1, opacity: 1 }}
-               className="relative mb-6"
-             >
-               <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
-               <div className="w-28 h-28 rounded-full border-4 border-primary shadow-2xl overflow-hidden relative z-10 bg-white">
-                  <img 
-                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-                    alt="Shopito" 
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-               </div>
-             </motion.div>
-             
-             <h3 className="text-xl font-black uppercase italic text-text-base tracking-tight">Gerador de Relatórios Inteligente</h3>
-             <p className="max-w-md text-xs font-bold text-text-muted mt-2 uppercase tracking-widest leading-relaxed">
-               Olá! Eu sou o Shopito. Me peça para gerar qualquer análise, resumo de consumo ou listas de validade do seu almoxarifado.
-             </p>
-             
-             <div className="grid grid-cols-2 gap-2 mt-8 w-full max-w-sm">
-                {['Consumo de luvas este mês', 'Itens vencendo em 30 dias', 'Resumo por categoria', 'Maiores fornecedores'].map(s => (
-                  <button 
-                    key={s} 
-                    onClick={() => setQuery(s)}
-                    className="p-2 text-[10px] font-black uppercase text-text-muted bg-surface border border-border-base rounded-sm hover:border-primary transition-all text-left"
-                  >
-                    {s}
-                  </button>
-                ))}
-             </div>
+    <div className="flex flex-col h-[calc(100vh-160px)] max-w-5xl mx-auto space-y-6">
+      {/* Header com Ações Rápidas */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h2 className="text-2xl font-black uppercase italic text-text-base tracking-tighter">Shopito Intelligence</h2>
           </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={cn(
-            "flex w-full mb-4",
-            m.role === 'user' ? "justify-end" : "justify-start"
-          )}>
-            <div className={cn(
-              "max-w-[85%] rounded-[4px] p-4 shadow-sm",
-              m.role === 'user' 
-                ? "bg-primary text-white" 
-                : "bg-surface border border-border-base text-text-base"
-            )}>
-              {m.role === 'assistant' && (
-                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border-base/10">
-                  <img 
-                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-                    className="w-5 h-5 rounded-full object-cover" 
-                    referrerPolicy="no-referrer"
-                  />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Shopito Assistant</span>
-                </div>
-              )}
-              <div className={cn("text-sm prose prose-sm max-w-none dark:prose-invert", m.role === 'user' ? "text-white" : "text-text-base")}>
-                 <Markdown>{m.content}</Markdown>
-              </div>
-            </div>
-          </div>
-        ))}
-        {isGenerating && (
-          <div className="flex justify-start">
-             <div className="bg-surface border border-border-base p-4 rounded-[4px] shadow-sm flex items-center gap-3">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-                   <Sparkles className="w-4 h-4 text-primary" />
-                </motion.div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Shopito está processando seu relatório...</span>
-             </div>
-          </div>
-        )}
+          <p className="text-[10px] font-bold text-text-muted uppercase tracking-[0.2em] mt-1">Gere relatórios analíticos em segundos</p>
+        </div>
+        
+        <div className="flex gap-2">
+          {['Resumo de Estoque', 'Alertas de Validade', 'Giro Mensal'].map(btn => (
+            <button 
+              key={btn}
+              onClick={() => {
+                setQuery(`Gere um ${btn.toLowerCase()} detalhado.`);
+                // O useEffect ou um timer poderia disparar, mas vamos deixar o usuário clicar em enviar
+              }}
+              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest bg-surface border border-border-base rounded-[4px] hover:border-primary transition-all text-text-muted hover:text-primary"
+            >
+              {btn}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <form onSubmit={handleSend} className="relative mt-auto">
-        <input 
+      {/* Área do Documento */}
+      <div className="flex-1 bg-surface border border-border-base rounded-[4px] shadow-2xl overflow-hidden flex flex-col relative group">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-primary to-primary/50 opacity-50" />
+        
+        <div className="p-4 border-b border-border-base bg-surface-variant/20 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted">Relatório Analítico Gerado</span>
+          </div>
+          {currentReport && (
+            <button 
+              onClick={() => window.print()}
+              className="p-2 hover:bg-surface-variant rounded-full transition-all text-text-muted"
+              title="Imprimir Relatório"
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar">
+          {isGenerating ? (
+            <div className="h-full flex flex-col items-center justify-center space-y-6">
+               <motion.div 
+                 animate={{ 
+                   scale: [1, 1.1, 1],
+                   rotate: [0, 90, 180, 270, 360]
+                 }}
+                 transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                 className="relative"
+               >
+                 <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full scale-150" />
+                 <img 
+                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+                    className="w-20 h-20 rounded-full border-4 border-primary shadow-2xl relative z-10" 
+                    referrerPolicy="no-referrer"
+                 />
+               </motion.div>
+               <div className="text-center">
+                 <h3 className="text-xl font-black uppercase italic text-primary animate-pulse tracking-tighter">Processando Dados...</h3>
+                 <p className="text-xs font-bold text-text-muted uppercase tracking-widest mt-2">O Shopito está organizando seu almoxarifado</p>
+               </div>
+            </div>
+          ) : currentReport ? (
+            <div className="prose prose-invert prose-sm max-w-none animate-in fade-in slide-in-from-bottom-4 duration-700">
+               <Markdown>{currentReport}</Markdown>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
+               <FileText className="w-20 h-20 mb-4 text-text-muted" />
+               <p className="text-sm font-black uppercase tracking-widest text-text-muted">Aguardando comando de análise...</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Barra de Comando */}
+      <form onSubmit={handleGenerateReport} className="relative">
+        <textarea 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={isGenerating}
-          placeholder="O que você deseja saber sobre o estoque hoje?"
-          className="w-full bg-surface border border-border-base focus:border-primary rounded-sm p-4 pr-14 outline-none transition-all shadow-xl font-bold placeholder:text-text-muted/50 text-sm"
+          rows={2}
+          placeholder="O que você deseja que o Shopito analise hoje? Ex: 'Relatório de consumo mensal' ou 'Checklist de itens críticos'..."
+          className="w-full bg-surface border-2 border-border-base focus:border-primary rounded-[8px] p-4 pr-20 outline-none transition-all shadow-xl text-sm font-medium placeholder:text-text-muted/40 resize-none"
         />
         <button 
           type="submit"
           disabled={!query.trim() || isGenerating}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-white rounded-sm disabled:opacity-50 hover:bg-accent transition-all"
+          className="absolute right-3 top-1/2 -translate-y-1/2 px-6 py-3 bg-primary text-white font-black uppercase italic rounded-[4px] shadow-lg hover:bg-accent transition-all active:scale-95 text-xs disabled:opacity-50"
         >
-          <Send className="w-5 h-5" />
+          {isGenerating ? 'Gerando...' : 'Gerar Relatório'}
         </button>
       </form>
     </div>
