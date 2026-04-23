@@ -4,9 +4,10 @@ import { InventoryItem, Movement, Category } from "../types";
 const getApiKey = () => {
   const key = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || 
               (import.meta as any).env?.OPENROUTER_API_KEY || 
-              "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";
+              "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";
   
-  if (key && key.startsWith("sk-or-v1")) {
+  if (key && key.trim().startsWith("sk-or-v1")) {
+
     console.log("Shopito: Chave de API carregada com sucesso.");
     return key.trim();
   }
