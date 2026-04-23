@@ -73,9 +73,10 @@ import {
   EyeOff,
   Trash2,
   Edit2,
-  Copy
+  Copy,
+  ChevronLeft
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { format, isPast, isBefore, addDays, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from './lib/utils';
