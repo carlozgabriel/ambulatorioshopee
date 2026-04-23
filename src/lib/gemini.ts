@@ -1,7 +1,7 @@
 import { InventoryItem, Movement, Category } from "../types";
 
 // Configurações do OpenRouter
-const OPENROUTER_KEY = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || "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";
+const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || "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";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 async function callAI(prompt: string): Promise<string> {
@@ -10,12 +10,12 @@ async function callAI(prompt: string): Promise<string> {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENROUTER_KEY}`,
+        "Authorization": `Bearer ${OPENROUTER_KEY.trim()}`,
         "HTTP-Referer": "https://ambulatorioshopee.vercel.app/",
         "X-Title": "C3 Ambulatorio"
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-001", // Modelo rápido e eficiente
+        model: "google/gemini-flash-1.5", 
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 1000
