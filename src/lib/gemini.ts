@@ -1,31 +1,41 @@
 import { InventoryItem, Movement, Category } from "../types";
 
-const OPENROUTER_API_KEY = "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";
-const OPENROUTER_MODEL = "openai/gpt-4o-mini"; // Rápido, barato e muito capaz
+// Configurações do OpenRouter
+const OPENROUTER_API_KEY = "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";
+const OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
 
 async function callOpenRouter(prompt: string): Promise<string> {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "http://localhost:3000",
-      "X-Title": "Ambulatório Shopee"
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 1024,
-    })
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenRouter error: ${response.status} - ${err}`);
+  if (!OPENROUTER_API_KEY) {
+    console.error("OpenRouter API Key não configurada.");
+    throw new Error("API Key não configurada.");
   }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || "";
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Ambulatório Shopee"
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [{ role: "user", content: prompt }],
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`OpenRouter error: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (error) {
+    console.error("OpenRouter Call Error:", error);
+    throw error;
+  }
 }
 
 export const generateInventoryInsights = async (
@@ -33,10 +43,7 @@ export const generateInventoryInsights = async (
   movements: Movement[],
   categories: Category[]
 ): Promise<string> => {
-  const lowStockItems = items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
-  const recentMovements = movements
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 20);
+  if (items.length === 0) return "Adicione itens ao catálogo para gerar insights!";
 
   const stockSummary = items.map(i => ({
     nome: i.name,
@@ -45,39 +52,30 @@ export const generateInventoryInsights = async (
     minimo: i.minQuantity || 5
   }));
 
-  const movementSummary = recentMovements.map(m => ({
-    tipo: m.type,
-    item: items.find(i => i.id === m.itemId)?.name || 'Desconhecido',
-    qtd: m.quantity,
-    data: m.timestamp
-  }));
+  const recentMovements = movements
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 15)
+    .map(m => ({
+      tipo: m.type,
+      item: items.find(i => i.id === m.itemId)?.name || 'Desconhecido',
+      qtd: m.quantity
+    }));
 
   const prompt = `
     Você é o Shopito, o assistente inteligente do Ambulatório Shopee. 
-    Sua personalidade é prestativa, profissional, mas leve e atenciosa.
-    Abaixo estão os dados atuais do estoque e as movimentações recentes.
+    Abaixo estão os dados do estoque. Gere um insight curto (max 280 caracteres).
+    Foque em reposição e padrões. Seja direto e prestativo.
     
-    ESTOQUE ATUAL:
-    ${JSON.stringify(stockSummary)}
+    ESTOQUE: ${JSON.stringify(stockSummary)}
+    MOVIMENTAÇÕES: ${JSON.stringify(recentMovements)}
     
-    MOVIMENTAÇÕES RECENTES:
-    ${JSON.stringify(movementSummary)}
-    
-    TAREFA:
-    Gere um insight curto e acionável (máximo 300 caracteres). 
-    Foque em:
-    1. Itens críticos que precisam de reposição imediata.
-    2. Padrões de consumo anormais (se houver).
-    3. Uma dica amigável de gestão.
-    
-    Responda em Português do Brasil. Comece com uma saudação curta do Shopito.
+    Responda em Português do Brasil.
   `;
 
   try {
     return await callOpenRouter(prompt);
   } catch (error) {
-    console.error("OpenRouter Error:", error);
-    return "Ops! O Shopito teve um pequeno contratempo ao analisar os dados. Mas não se preocupe, o estoque físico continua seguro!";
+    return "Ops! O Shopito teve um contratempo ao analisar os dados no OpenRouter.";
   }
 };
 
@@ -88,33 +86,26 @@ export const generateCustomReport = async (
   categories: Category[]
 ): Promise<string> => {
   const prompt = `
-    Você é o Shopito, assistente de ambulatório do Ambulatório Shopee.
-    O usuário solicitou o seguinte relatório/informação: "${query}"
+    Você é o Shopito, assistente do Ambulatório Shopee.
+    O usuário quer: "${query}"
     
-    DADOS DO SISTEMA:
-    - Itens em estoque: ${JSON.stringify(items.map(i => ({
+    DADOS:
+    - Itens: ${JSON.stringify(items.map(i => ({
       nome: i.name,
-      categoria: categories.find(c => c.id === i.categoryId)?.name || 'Geral',
-      saldo: i.currentQuantity,
-      unidade: i.unit,
-      minimo: i.minQuantity
+      cat: categories.find(c => c.id === i.categoryId)?.name || 'Geral',
+      saldo: i.currentQuantity
     })))}
-    - Movimentações Recentes (últimas 100): ${JSON.stringify(movements.slice(0, 100))}
-    - Categorias: ${JSON.stringify(categories.map(c => c.name))}
+    - Movimentações (últimas 30): ${JSON.stringify(movements.slice(0, 30))}
     
-    INSTRUÇÕES:
-    1. Responda de forma organizada, usando Markdown (tabelas, listas, negrito).
-    2. Seja preciso com os cálculos se solicitado.
-    3. Mantenha o tom profissional e prestativo do Shopito.
-    4. Se a pergunta não tiver relação com o ambulatório ou os dados fornecidos, educadamente direcione o usuário para o assunto correto.
-    
-    Responda em Português do Brasil.
+    Responda de forma organizada em Markdown. Seja preciso.
   `;
 
   try {
     return await callOpenRouter(prompt);
   } catch (error) {
-    console.error("OpenRouter Report Error:", error);
-    return "Erro ao gerar relatório com IA. Verifique a conexão e tente novamente.";
+    return "Erro ao gerar relatório via OpenRouter.";
   }
 };
+
+
+

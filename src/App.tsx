@@ -200,6 +200,1078 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose:
   </AnimatePresence>
 );
 
+// --- Component Props Interfaces ---
+
+interface DashboardProps {
+  items: InventoryItem[];
+  movements: Movement[];
+  categories: Category[];
+  stats: {
+    totalItems: number;
+    lowStock: number;
+    expiringSoon: number;
+    recentMovements: number;
+  };
+  topConsumedItems: { name: string; quantity: number }[];
+  aiInsight: string;
+  isLoadingInsight: boolean;
+  fetchAiInsight: () => void;
+  setActiveTab: (tab: any) => void;
+  expiringBatches: any[];
+  theme: 'light' | 'dark';
+}
+
+interface ItemsViewProps {
+  items: InventoryItem[];
+  categories: Category[];
+  theme: 'light' | 'dark';
+  setIsCategoryModalOpen: (open: boolean) => void;
+  handleEditCategory: (cat: Category) => void;
+  handleDeleteCategory: (cat: Category) => void;
+  setEditingItem: (item: InventoryItem | null) => void;
+  setIsItemModalOpen: (open: boolean) => void;
+  setSelectedItemForIndication: (item: InventoryItem | null) => void;
+  handleEditItem: (item: InventoryItem) => void;
+  handleDeleteItem: (id: string) => void;
+}
+
+interface StockViewProps {
+  items: InventoryItem[];
+  categories: Category[];
+  setMovementType: (type: 'ENTRADA' | 'SAIDA') => void;
+  setSelectedItemForMovement: (item: InventoryItem | null) => void;
+  setIsMovementModalOpen: (open: boolean) => void;
+}
+
+interface ReportsViewProps {
+  items: InventoryItem[];
+  movements: Movement[];
+  categories: Category[];
+}
+
+const Dashboard = ({ 
+  items, 
+  movements, 
+  categories, 
+  stats, 
+  topConsumedItems, 
+  aiInsight, 
+  isLoadingInsight, 
+  fetchAiInsight, 
+  setActiveTab, 
+  expiringBatches, 
+  theme 
+}: DashboardProps) => (
+  <div className="space-y-4">
+    {/* AI Assistant Card */}
+    <Card className="border-none shadow-xl bg-gradient-to-br from-[#EE4D2D] via-[#f53d2d] to-[#ff4d00] text-white overflow-hidden relative group">
+      <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
+        <Sparkles className="w-32 h-32 rotate-12" />
+      </div>
+      <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
+        <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
+          <img 
+            src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+            alt="Shopito" 
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        </div>
+        <div className="flex-1 text-center md:text-left">
+          <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Assistant</span>
+            {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
+          </div>
+          <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insights do seu Ambulatório</h3>
+          <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
+            {isLoadingInsight ? (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+                <span className="text-xs uppercase font-black opacity-50 ml-2">Shopito está analisando os dados...</span>
+              </div>
+            ) : (
+              <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para receber recomendações inteligentes baseadas no seu estoque atual!"}</p>
+            )}
+          </div>
+        </div>
+        <Button 
+          variant="outline" 
+          onClick={fetchAiInsight}
+          disabled={isLoadingInsight}
+          className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
+        >
+          Atualizar Insights
+        </Button>
+      </div>
+    </Card>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[
+        { label: 'Total no Catálogo', value: stats.totalItems, icon: Box, color: 'text-primary', bg: 'bg-primary/5', border: 'border-primary/10' },
+        { label: 'Alertas de Validade', value: stats.expiringSoon, icon: Clock, color: 'text-accent', bg: 'bg-accent/5', border: 'border-accent/10' },
+        { label: 'Itens Vencidos', value: '00', icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/5', border: 'border-rose-500/10' },
+        { label: 'Fluxo Recente', value: stats.recentMovements, icon: History, color: 'text-secondary', bg: 'bg-secondary/5', border: 'border-secondary/10' },
+      ].map((stat, i) => (
+        <Card key={i} className={cn("p-4 border shadow-sm hover:shadow-md transition-all group", stat.border)}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
+              <p className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
+            </div>
+            <div className={cn("p-2 rounded-xl transition-all group-hover:scale-110", stat.bg)}>
+              <stat.icon className={cn("w-5 h-5", stat.color)} />
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-1.5 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
+              <div className="w-1 h-1 rounded-full bg-current" />
+              <span className="text-[9px] font-bold uppercase tracking-tight">Atualizado agora</span>
+          </div>
+        </Card>
+      ))}
+    </div>
+
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <Card className="lg:col-span-2 shadow-sm border-border-base overflow-hidden">
+        <div className="px-6 py-4 border-b border-border-base bg-surface/50 flex items-center justify-between">
+          <h3 className="text-sm font-black text-secondary flex items-center gap-2 uppercase italic tracking-tight">
+              <Box className="w-4 h-4 text-primary" />
+              Panorama do Estoque
+              <span className="text-[10px] text-text-muted font-bold not-italic ml-2 lowercase">({items.length} itens totais)</span>
+          </h3>
+          <Button variant="ghost" className="text-[9px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 hover:text-primary" onClick={() => setActiveTab('stock')}>
+            Abrir Inventário
+          </Button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+              <thead className="bg-bg-main/50 text-text-muted font-bold uppercase tracking-widest">
+                  <tr>
+                      <th className="px-6 py-3 border-b border-border-base">Insumo</th>
+                      <th className="px-6 py-3 border-b border-border-base">Categoria</th>
+                      <th className="px-6 py-3 border-b border-border-base text-center">Saldo</th>
+                      <th className="px-6 py-3 border-b border-border-base">Status</th>
+                  </tr>
+              </thead>
+              <tbody className="divide-y divide-border-base">
+                  {items.slice(0, 6).map(item => {
+                      const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                      return (
+                          <tr key={item.id} className="hover:bg-bg-main/40 transition-colors group">
+                              <td className="px-6 py-4">
+                                <p className="font-bold text-text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
+                                <p className="text-[9px] text-text-muted font-mono uppercase mt-0.5">ID: {item.id.slice(0,8)}</p>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-bold text-text-muted uppercase bg-bg-main px-2 py-0.5 rounded-sm">
+                                  {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={cn("text-sm font-black tracking-tight", lowStock ? "text-rose-600" : "text-primary")}>
+                                  {item.currentQuantity}
+                                </span>
+                                <span className="text-[10px] text-text-muted font-bold ml-1 uppercase">un</span>
+                              </td>
+                              <td className="px-6 py-4">
+                                  <div className={cn(
+                                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[9px] font-black uppercase tracking-widest border",
+                                      lowStock 
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' 
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                                  )}>
+                                      <div className={cn("w-1.5 h-1.5 rounded-full", lowStock ? "bg-rose-600 animate-pulse" : "bg-emerald-600")} />
+                                      {lowStock ? 'Reposição Necessária' : 'Em Conformidade'}
+                                  </div>
+                              </td>
+                          </tr>
+                      );
+                  })}
+              </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4">
+          <Card>
+              <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                      <TrendingDown className="w-4 h-4 text-rose-500" />
+                      Mais Consumidos
+                  </h3>
+              </div>
+              <div className="p-4 h-[240px]">
+                  {topConsumedItems.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={topConsumedItems} layout="vertical" margin={{ left: -10, right: 30, top: 0, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                              <XAxis type="number" hide />
+                              <YAxis 
+                                  dataKey="name" 
+                                  type="category" 
+                                  hide={false} 
+                                  width={80} 
+                                  fontSize={9} 
+                                  fontWeight="bold"
+                                  axisLine={false}
+                                  tickLine={false}
+                                  stroke={theme === 'dark' ? '#888' : '#666'}
+                              />
+                              <Tooltip 
+                                  cursor={{ fill: 'transparent' }}
+                                  contentStyle={{ 
+                                      backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                                      fontSize: '10px',
+                                      padding: '4px 8px',
+                                      color: theme === 'dark' ? '#fff' : '#000'
+                                  }}
+                              />
+                              <Bar dataKey="quantity" radius={[0, 2, 2, 0]} barSize={14}>
+                                  {topConsumedItems.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d00' : '#ff4d0080'} />
+                                  ))}
+                              </Bar>
+                          </BarChart>
+                      </ResponsiveContainer>
+                  ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
+                           <TrendingUp className="w-8 h-8 opacity-20" />
+                           <p className="text-[9px] uppercase font-bold tracking-widest">Sem dados</p>
+                      </div>
+                  )}
+              </div>
+          </Card>
+
+          <Card>
+              <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                       <AlertTriangle className="w-4 h-4 text-accent" />
+                       Alertas Validade
+                  </h3>
+              </div>
+              <div className="p-4 space-y-3">
+                  {expiringBatches.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-4 text-center">
+                          <CheckCircle2 className="w-8 h-8 text-success/30 mb-2" />
+                          <p className="text-[10px] font-bold text-success uppercase tracking-widest">Tudo em dia!</p>
+                      </div>
+                  ) : expiringBatches.map(batch => (
+                      <div key={batch.id} className="flex items-center gap-3 p-2 bg-rose-50 dark:bg-rose-500/5 rounded-sm border border-rose-100 dark:border-rose-500/10">
+                          <div className="bg-rose-500 text-white p-1 rounded-sm">
+                              <Clock className="w-3 h-3" />
+                          </div>
+                          <div className="flex-1">
+                              <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 leading-none uppercase tracking-tight">{items.find(i => i.id === batch.itemId)?.name}</p>
+                              <p className="text-[9px] text-rose-500/70 font-bold mt-1">Lote: {batch.lotNumber} • Vence em: {format(new Date(batch.expirationDate), 'dd/MM/yy')}</p>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </Card>
+      </div>
+    </div>
+  </div>
+);
+
+const ItemsView = ({
+  items,
+  categories,
+  theme,
+  setIsCategoryModalOpen,
+  handleEditCategory,
+  handleDeleteCategory,
+  setEditingItem,
+  setIsItemModalOpen,
+  setSelectedItemForIndication,
+  handleEditItem,
+  handleDeleteItem
+}: ItemsViewProps) => {
+  const [itemsSubTab, setItemsSubTab] = useState<'overview' | 'categories' | 'list'>('overview');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [supplierFilter, setSupplierFilter] = useState('all');
+  
+  // Get unique suppliers for the filter
+  const uniqueSuppliers = useMemo(() => {
+    const suppliers = new Set(items.map(i => i.supplier).filter(Boolean));
+    return Array.from(suppliers).sort();
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter(i => {
+      const matchesSearch = i.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = categoryFilter === 'all' || i.categoryId === categoryFilter;
+      const matchesSupplier = supplierFilter === 'all' || i.supplier === supplierFilter;
+      let matchesStatus = true;
+      if (statusFilter === 'low') matchesStatus = (i.currentQuantity || 0) <= (i.minQuantity || 5);
+      if (statusFilter === 'out') matchesStatus = (i.currentQuantity || 0) === 0;
+      if (statusFilter === 'ok') matchesStatus = (i.currentQuantity || 0) > (i.minQuantity || 5);
+      
+      return matchesSearch && matchesCategory && matchesStatus && matchesSupplier;
+    });
+  }, [items, searchQuery, categoryFilter, statusFilter, supplierFilter]);
+
+  const categoryStats = useMemo(() => {
+    return categories.map(cat => {
+      const catItems = items.filter(i => i.categoryId === cat.id);
+      return {
+        name: cat.name,
+        value: catItems.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
+        count: catItems.length,
+        color: cat.color || '#EE4D2D'
+      };
+    })
+    .filter(c => c.count > 0)
+    .sort((a, b) => b.value - a.value); // Ordena por maior quantidade
+  }, [items, categories]);
+
+  return (
+    <div className="space-y-6">
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-1 border-b border-border-base mb-6 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'overview', label: 'Catálogo', icon: BarChart3 },
+          { id: 'categories', label: 'Categorias', icon: Tag },
+          { id: 'list', label: 'Lista', icon: List }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setItemsSubTab(tab.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-6 py-3 text-xs font-black uppercase tracking-widest transition-all relative whitespace-nowrap",
+              itemsSubTab === tab.id 
+                ? "text-primary" 
+                : "text-text-muted hover:text-text-base"
+            )}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+            {itemsSubTab === tab.id && (
+              <motion.div 
+                layoutId="items-tab-active"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
+              />
+            )}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence mode="wait">
+        {itemsSubTab === 'overview' && (
+          <motion.div
+            key="overview"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="p-6 border-l-4 border-primary">
+                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total de Itens Cadastrados</p>
+                <p className="text-3xl font-black text-text-base italic">{items.length}</p>
+                <div className="mt-4 flex items-center gap-2 text-emerald-500">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span className="text-[9px] font-bold uppercase">Catálogo Ativo</span>
+                </div>
+              </Card>
+              <Card className="p-6 border-l-4 border-accent">
+                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total em Estoque</p>
+                <p className="text-3xl font-black text-text-base italic">{items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)}</p>
+                <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Unidades totais somadas</p>
+              </Card>
+              <Card className="p-6 border-l-4 border-rose-500">
+                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Categorias Ativas</p>
+                <p className="text-3xl font-black text-text-base italic">{categories.length}</p>
+                <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Distribuição diversificada</p>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="p-6">
+                <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
+                  <Grid className="w-4 h-4 text-primary" /> Distribuição por Categoria (Qtd)
+                </h3>
+                <div className="h-[360px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart 
+                      data={categoryStats} 
+                      layout="vertical" 
+                      margin={{ left: 10, right: 30, top: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                      <XAxis type="number" hide />
+                      <YAxis 
+                        dataKey="name" 
+                        type="category" 
+                        width={120} 
+                        fontSize={9} 
+                        fontWeight="bold"
+                        axisLine={false}
+                        tickLine={false}
+                        stroke={theme === 'dark' ? '#888' : '#666'}
+                        tickFormatter={(value) => (value && value.length > 18) ? `${value.substring(0, 15)}...` : (value || "")}
+                      />
+                      <Tooltip 
+                        cursor={{ fill: 'transparent' }}
+                        contentStyle={{ 
+                          backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                          fontSize: '11px',
+                          padding: '8px',
+                          color: theme === 'dark' ? '#fff' : '#000'
+                        }}
+                      />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                        {categoryStats.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" /> Resumo das Categorias
+                </h3>
+                <div className="space-y-4">
+                  {categoryStats.map((cat, idx) => (
+                    <div key={idx} className="flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                        <span className="text-text-base">{cat.name}</span>
+                        <span className="text-primary">{cat.value} un</span>
+                      </div>
+                      <div className="w-full h-2 bg-bg-main rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(cat.value / items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 1)) * 100}%` }}
+                          className="h-full bg-primary"
+                        />
+                      </div>
+                      <p className="text-[9px] text-text-muted font-bold uppercase">{cat.count} TIPOS DE INSUMO NESTA CATEGORIA</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </motion.div>
+        )}
+
+        {itemsSubTab === 'categories' && (
+          <motion.div
+            key="categories"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between bg-surface p-4 rounded-sm border border-border-base">
+              <div className="space-y-1">
+                 <h3 className="text-lg font-black text-text-base uppercase italic">Gestão de Grupos</h3>
+                 <p className="text-[10px] text-text-muted font-bold uppercase">Organize seus insumos por categorias lógicas</p>
+              </div>
+              <Button onClick={() => setIsCategoryModalOpen(true)}>
+                <Plus className="w-4 h-4" /> Nova Categoria
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {categories.map(cat => (
+                <Card key={cat.id} className="p-6 hover:border-primary transition-all group border-2 border-transparent">
+                   <div className="flex items-center gap-4 mb-4">
+                      <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
+                      <div className="flex-1">
+                         <h4 className="font-black text-text-base uppercase italic leading-none">{cat.name}</h4>
+                         <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{items.filter(i => i.categoryId === cat.id).length} itens vinculados</p>
+                      </div>
+                   </div>
+                   <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 h-8 text-[9px]" onClick={() => handleEditCategory(cat)}>
+                         <Edit2 className="w-3 h-3 mr-2" /> Editar
+                      </Button>
+                      <Button variant="outline" className="flex-1 h-8 text-[9px] border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white" onClick={() => handleDeleteCategory(cat)}>
+                         <Trash2 className="w-3 h-3 mr-2" /> Excluir
+                      </Button>
+                   </div>
+                </Card>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {itemsSubTab === 'list' && (
+          <motion.div
+            key="list"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-6"
+          >
+            {/* Filters Bar */}
+            <div className="flex flex-col xl:flex-row gap-4 items-center bg-surface p-4 rounded-sm border border-border-base shadow-sm">
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <input 
+                  placeholder="Pesquisar por nome ou especificação..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
+                />
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                 <div className="flex items-center gap-2">
+                    <Filter className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="text-[10px] font-black uppercase text-text-muted">Filtros:</span>
+                 </div>
+                 
+                 <Select 
+                   id="catFilter" 
+                   value={categoryFilter} 
+                   onChange={(e) => setCategoryFilter(e.target.value)}
+                   className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                 >
+                   <option value="all">TODAS CATEGORIAS</option>
+                   {categories.map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)}
+                 </Select>
+
+                 <Select 
+                   id="statusFilter" 
+                   value={statusFilter} 
+                   onChange={(e) => setStatusFilter(e.target.value as any)}
+                   className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                 >
+                   <option value="all">STATUS (TODOS)</option>
+                   <option value="ok">DISPONÍVEL</option>
+                   <option value="low">BAIXO ESTOQUE</option>
+                   <option value="out">INDISPONÍVEL</option>
+                 </Select>
+
+                 <Select 
+                   id="supplierFilter" 
+                   value={supplierFilter} 
+                   onChange={(e) => setSupplierFilter(e.target.value)}
+                   className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
+                 >
+                   <option value="all">FORNECEDOR (TODOS)</option>
+                   {uniqueSuppliers.map(s => <option key={s} value={s}>{s?.toUpperCase()}</option>)}
+                 </Select>
+
+                 <div className="xl:h-8 xl:w-[1px] bg-border-base hidden xl:block" />
+
+                 <Button className="h-9 text-[10px]" onClick={() => { setEditingItem(null); setIsItemModalOpen(true); }}>
+                   <Plus className="w-4 h-4" /> Novo Item
+                 </Button>
+              </div>
+            </div>
+
+            <Card className="overflow-hidden border-border-base">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
+                    <tr>
+                      <th className="px-5 py-3 border-b border-border-base w-[10%]">Status</th>
+                      <th className="px-5 py-3 border-b border-border-base text-left">Insumo</th>
+                      <th className="px-5 py-3 border-b border-border-base">Categoria</th>
+                      <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
+                      <th className="px-5 py-3 border-b border-border-base text-center">Unidade</th>
+                      <th className="px-5 py-3 border-b border-border-base text-center">Mín. Alerta</th>
+                      <th className="px-5 py-3 border-b border-border-base text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-base">
+                    {filteredItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-20 text-center text-text-muted font-bold uppercase tracking-widest opacity-50">
+                          Nenhum item encontrado com os filtros aplicados
+                        </td>
+                      </tr>
+                    ) : filteredItems.map(item => {
+                      const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                      const outState = (item.currentQuantity || 0) === 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-bg-main/50 transition-colors group">
+                          <td className="px-5 py-3">
+                            <div className={cn(
+                              "w-2 h-2 rounded-full",
+                              outState ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" : 
+                              lowStock ? "bg-accent shadow-[0_0_8px_rgba(255,165,0,0.5)]" : 
+                              "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                            )} />
+                          </td>
+                          <td className="px-5 py-3">
+                             <p className="font-black text-text-base uppercase italic leading-none group-hover:text-primary transition-colors">{item.name}</p>
+                             <p className="text-[8px] text-text-muted mt-1 uppercase font-bold">ID: {item.id.slice(0,10)}</p>
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
+                              {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-text-muted uppercase font-bold">{item.supplier || '-'}</td>
+                          <td className="px-5 py-3 text-center text-text-muted font-bold uppercase text-[10px]">{item.unit || 'UN'}</td>
+                          <td className="px-5 py-3 text-center">
+                             <span className={cn("text-xs font-black px-2 py-0.5 rounded-sm", lowStock ? "text-rose-500 bg-rose-500/5" : "text-text-muted bg-bg-main")}>
+                                {item.minQuantity || 5}
+                             </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                              {item.indication && (
+                                <button onClick={() => setSelectedItemForIndication(item)} title="Ver indicação" className="text-text-muted hover:text-primary transition-colors">
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button onClick={() => handleEditItem(item)} title="Editar item" className="text-primary hover:text-accent transition-colors">
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteItem(item.id)} title="Excluir item" className="text-rose-500 hover:text-rose-600 transition-colors">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const StockView = ({
+  items,
+  categories,
+  setMovementType,
+  setSelectedItemForMovement,
+  setIsMovementModalOpen
+}: StockViewProps) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewType, setViewType] = useState<'grid' | 'table'>('table');
+  const [filter, setFilter] = useState<'all' | 'low'>('all');
+  
+  const filteredItems = useMemo(() => {
+    let result = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (filter === 'low') {
+      result = result.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
+    }
+    return result;
+  }, [items, searchQuery, filter]);
+
+  const handleDownloadCSV = (type: 'all' | 'critical') => {
+    const targetItems = type === 'all' 
+      ? items 
+      : items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
+
+    const headers = ['ID', 'Item', 'Categoria', 'Fornecedor', 'Estoque Atual', 'Estoque Minimo', 'Status'];
+    const rows = targetItems.map(item => [
+      item.id,
+      item.name,
+      categories.find(c => c.id === item.categoryId)?.name || 'Geral',
+      item.supplier || 'N/A',
+      item.currentQuantity,
+      item.minQuantity || 5,
+      (item.currentQuantity || 0) <= (item.minQuantity || 5) ? 'CRITICO' : 'NORMAL'
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `estoque_${type}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header Stats for Stock Page */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+         <Card className="p-4 bg-primary/5 border-primary/10">
+            <div className="flex items-center gap-3">
+               <div className="bg-primary p-2 rounded-sm text-white"><Box className="w-4 h-4" /></div>
+               <div>
+                  <p className="text-[10px] font-black uppercase text-text-muted">Insumos Cadastrados</p>
+                  <p className="text-xl font-black text-primary italic">{items.length}</p>
+               </div>
+            </div>
+         </Card>
+         <Card className="p-4 bg-rose-500/5 border-rose-500/10">
+            <div className="flex items-center gap-3">
+               <div className="bg-rose-500 p-2 rounded-sm text-white"><TrendingDown className="w-4 h-4" /></div>
+               <div>
+                  <p className="text-[10px] font-black uppercase text-text-muted">Abaixo do Mínimo</p>
+                  <p className="text-xl font-black text-rose-500 italic">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</p>
+               </div>
+            </div>
+         </Card>
+
+         <Card className="p-4 bg-surface border-border-base col-span-1 md:col-span-2 flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black uppercase text-text-muted tracking-widest">Relatórios de Inventário</p>
+              <p className="text-[9px] font-bold text-text-muted/60 uppercase">Exportação em formato CSV para conferência externa</p>
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="h-9 text-[9px] font-black uppercase tracking-widest border-rose-500/30 text-rose-600 hover:bg-rose-500 hover:text-white"
+                onClick={() => handleDownloadCSV('critical')}
+              >
+                <Download className="w-3 h-3 mr-2" /> Críticos
+              </Button>
+              <Button 
+                variant="outline" 
+                className="h-9 text-[9px] font-black uppercase tracking-widest"
+                onClick={() => handleDownloadCSV('all')}
+              >
+                <Download className="w-3 h-3 mr-2" /> Completo
+              </Button>
+            </div>
+         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+        {/* Main Items Section */}
+        <div className="xl:col-span-3 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-surface p-3 rounded-sm shadow-sm border border-border-base">
+            <div className="relative w-full md:max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <input 
+                placeholder="Pesquisar estoque..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="flex border border-border-base rounded-sm overflow-hidden bg-bg-main p-0.5">
+                 <button 
+                  onClick={() => setViewType('table')}
+                  className={cn("p-1.5 rounded-sm transition-all", viewType === 'table' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
+                 >
+                   <List className="w-4 h-4" />
+                 </button>
+                 <button 
+                  onClick={() => setViewType('grid')}
+                  className={cn("p-1.5 rounded-sm transition-all", viewType === 'grid' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
+                 >
+                   <Grid className="w-4 h-4" />
+                 </button>
+              </div>
+
+              <div className="h-8 w-[1px] bg-border-base mx-1" />
+
+              <Select 
+                id="filter" 
+                value={filter} 
+                onChange={(e) => setFilter(e.target.value as any)}
+                className="h-9 py-0 text-[10px] font-black uppercase tracking-widest w-40"
+              >
+                 <option value="all">TODOS OS ITENS</option>
+                 <option value="low">BAIXO ESTOQUE</option>
+              </Select>
+            </div>
+          </div>
+
+          {viewType === 'grid' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+              {filteredItems.length === 0 ? (
+                <div className="col-span-full py-20 text-center bg-surface border border-dashed border-border-base rounded-sm">
+                  <Box className="w-12 h-12 text-text-muted mx-auto mb-4 opacity-20" />
+                  <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Nenhum item em estoque</p>
+                </div>
+              ) : filteredItems.map(item => (
+                <Card key={item.id} className="group hover:border-primary transition-all h-full flex flex-col">
+                  <div className="p-4 flex-1 text-text-base">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.1em] mb-1 truncate">
+                          {categories.find(c => c.id === item.categoryId)?.name || 'Sem Categoria'}
+                        </p>
+                        <h4 className="text-sm font-black text-text-base group-hover:text-primary transition-colors leading-tight mb-1 truncate">
+                          {item.name}
+                        </h4>
+                        <p className="text-[10px] text-text-muted font-bold flex items-center gap-1.5 uppercase">
+                          <Truck className="w-3 h-3" /> {item.supplier || 'N/A'}
+                        </p>
+                      </div>
+                      <div className={cn(
+                        "px-2 py-1 rounded-sm flex flex-col items-center justify-center min-w-[45px] border",
+                        (item.currentQuantity || 0) <= (item.minQuantity || 5) 
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' 
+                          : 'bg-bg-main border-border-base text-text-base'
+                      )}>
+                        <span className="text-lg font-black leading-none italic">{item.currentQuantity || 0}</span>
+                        <span className="text-[8px] uppercase font-black mt-0.5">un</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 mt-auto pt-3 border-t border-border-base">
+                      <Button 
+                        variant="outline"
+                        className="flex-1 text-[9px] h-8 border-border-base hover:border-primary hover:text-primary" 
+                        onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                      >
+                        + Entrada
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        className="flex-1 text-[9px] h-8 border-border-base hover:border-danger hover:text-danger" 
+                        onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                      >
+                        - Saída
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card className="overflow-hidden border-border-base">
+               <div className="overflow-x-auto">
+                 <table className="w-full text-left text-[11px]">
+                    <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
+                       <tr>
+                          <th className="px-5 py-3 border-b border-border-base">Insumo</th>
+                          <th className="px-5 py-3 border-b border-border-base">Categoria</th>
+                          <th className="px-5 py-3 border-b border-border-base text-center">Saldo</th>
+                          <th className="px-5 py-3 border-b border-border-base text-center">Mínimo</th>
+                          <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
+                          <th className="px-5 py-3 border-b border-border-base text-right font-black">Ações</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                       {filteredItems.map(item => {
+                          const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                          return (
+                             <tr key={item.id} className="hover:bg-bg-main/50 transition-colors">
+                                <td className="px-5 py-3 font-black text-text-base uppercase italic">{item.name}</td>
+                                <td className="px-5 py-3">
+                                   <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
+                                      {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                                   </span>
+                                </td>
+                                <td className="px-5 py-3 text-center">
+                                   <span className={cn("text-sm font-black italic", lowStock ? 'text-rose-500' : 'text-primary')}>
+                                      {item.currentQuantity || 0} un
+                                   </span>
+                                </td>
+                                <td className="px-5 py-3 text-center text-text-muted font-bold font-mono">
+                                   {item.minQuantity || 5}
+                                </td>
+                                <td className="px-5 py-3 text-text-muted uppercase font-bold text-[9px]">{item.supplier || '-'}</td>
+                                <td className="px-5 py-3 text-right">
+                                   <div className="flex justify-end gap-1">
+                                      <button 
+                                        className="p-1.5 hover:bg-primary/10 text-primary transition-colors rounded-sm"
+                                        onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                        title="Entrada"
+                                      >
+                                         <Plus className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        className="p-1.5 hover:bg-rose-500/10 text-rose-500 transition-colors rounded-sm"
+                                        onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
+                                        title="Saída"
+                                      >
+                                         <Minus className="w-4 h-4" />
+                                      </button>
+                                   </div>
+                                </td>
+                             </tr>
+                          );
+                       })}
+                    </tbody>
+                 </table>
+               </div>
+            </Card>
+          )}
+        </div>
+
+        {/* Summary Sidebar for Stock */}
+        <div className="space-y-4">
+          <Card className="p-5 border border-border-base bg-bg-main/30">
+            <h3 className="font-black text-text-base uppercase tracking-tight italic text-[9px] mb-4 flex items-center gap-2">
+              <Tag className="w-3.5 h-3.5 text-primary" />
+              Resumo por Categoria
+            </h3>
+            <div className="space-y-1.5">
+              {categories.map(cat => {
+                const count = items.filter(i => i.categoryId === cat.id).length;
+                if (count === 0) return null;
+                return (
+                  <div key={cat.id} className="flex items-center justify-between text-[10px] font-bold text-text-muted uppercase">
+                    <span>{cat.name}</span>
+                    <span className="text-primary font-black">{items.filter(i => i.categoryId === cat.id).reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)} un</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="p-5 bg-secondary text-white border-none shadow-xl shadow-secondary/10">
+             <div className="flex items-center gap-3 mb-3">
+                <Box className="w-4 h-4 text-primary" />
+                <h4 className="font-black uppercase tracking-widest text-[9px]">Análise Rápida</h4>
+             </div>
+             <div className="space-y-3">
+                <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
+                   <span className="text-white/40 text-[9px] font-bold uppercase">Variedade</span>
+                   <span className="text-lg font-black italic">{items.length} itens</span>
+                </div>
+                <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
+                   <span className="text-white/40 text-[9px] font-bold uppercase">Baixo Estoque</span>
+                   <span className="text-lg font-black italic text-rose-400">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</span>
+                </div>
+             </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ReportsView = ({
+  items,
+  movements,
+  categories
+}: ReportsViewProps) => {
+  const [query, setQuery] = useState('');
+  const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim() || isGenerating) return;
+
+    const userMsg = query;
+    setQuery('');
+    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setIsGenerating(true);
+
+    const response = await generateCustomReport(userMsg, items, movements, categories);
+    setMessages(prev => [...prev, { role: 'assistant', content: response }]);
+    setIsGenerating(false);
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-180px)] space-y-4">
+      <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-border-base rounded-xl bg-surface/50">
+             <motion.div 
+               initial={{ scale: 0.8, opacity: 0 }}
+               animate={{ scale: 1, opacity: 1 }}
+               className="relative mb-6"
+             >
+               <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
+               <div className="w-28 h-28 rounded-full border-4 border-primary shadow-2xl overflow-hidden relative z-10 bg-white">
+                  <img 
+                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+                    alt="Shopito" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+               </div>
+             </motion.div>
+             
+             <h3 className="text-xl font-black uppercase italic text-text-base tracking-tight">Gerador de Relatórios Inteligente</h3>
+             <p className="max-w-md text-xs font-bold text-text-muted mt-2 uppercase tracking-widest leading-relaxed">
+               Olá! Eu sou o Shopito. Me peça para gerar qualquer análise, resumo de consumo ou listas de validade do seu almoxarifado.
+             </p>
+             
+             <div className="grid grid-cols-2 gap-2 mt-8 w-full max-w-sm">
+                {['Consumo de luvas este mês', 'Itens vencendo em 30 dias', 'Resumo por categoria', 'Maiores fornecedores'].map(s => (
+                  <button 
+                    key={s} 
+                    onClick={() => setQuery(s)}
+                    className="p-2 text-[10px] font-black uppercase text-text-muted bg-surface border border-border-base rounded-sm hover:border-primary transition-all text-left"
+                  >
+                    {s}
+                  </button>
+                ))}
+             </div>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={cn(
+            "flex w-full mb-4",
+            m.role === 'user' ? "justify-end" : "justify-start"
+          )}>
+            <div className={cn(
+              "max-w-[85%] rounded-[4px] p-4 shadow-sm",
+              m.role === 'user' 
+                ? "bg-primary text-white" 
+                : "bg-surface border border-border-base text-text-base"
+            )}>
+              {m.role === 'assistant' && (
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border-base/10">
+                  <img 
+                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+                    className="w-5 h-5 rounded-full object-cover" 
+                    referrerPolicy="no-referrer"
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Shopito Assistant</span>
+                </div>
+              )}
+              <div className={cn("text-sm prose prose-sm max-w-none dark:prose-invert", m.role === 'user' ? "text-white" : "text-text-base")}>
+                 <Markdown>{m.content}</Markdown>
+              </div>
+            </div>
+          </div>
+        ))}
+        {isGenerating && (
+          <div className="flex justify-start">
+             <div className="bg-surface border border-border-base p-4 rounded-[4px] shadow-sm flex items-center gap-3">
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                   <Sparkles className="w-4 h-4 text-primary" />
+                </motion.div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Shopito está processando seu relatório...</span>
+             </div>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={handleSend} className="relative mt-auto">
+        <input 
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          disabled={isGenerating}
+          placeholder="O que você deseja saber sobre o estoque hoje?"
+          className="w-full bg-surface border border-border-base focus:border-primary rounded-sm p-4 pr-14 outline-none transition-all shadow-xl font-bold placeholder:text-text-muted/50 text-sm"
+        />
+        <button 
+          type="submit"
+          disabled={!query.trim() || isGenerating}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-white rounded-sm disabled:opacity-50 hover:bg-accent transition-all"
+        >
+          <Send className="w-5 h-5" />
+        </button>
+      </form>
+    </div>
+  );
+};
+
 // --- Main App Logic ---
 
 export default function App() {
@@ -261,40 +1333,61 @@ export default function App() {
 
   const [aiInsight, setAiInsight] = useState<string>("");
   const [isLoadingInsight, setIsLoadingInsight] = useState(false);
+  const [movementToDelete, setMovementToDelete] = useState<Movement | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleDeleteMovement = async (movement: Movement) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta movimentação? O estoque será ajustado automaticamente.')) return;
+  const handleDeleteMovement = (movement: Movement) => {
+    setMovementToDelete(movement);
+  };
+
+  const confirmDeleteMovement = async () => {
+    if (!movementToDelete || isDeleting) return;
+    setIsDeleting(true);
     
     try {
+      const movement = movementToDelete;
+      console.log('Starting deletion of movement:', movement.id);
+
       // 1. Reverse Batch quantity
-      const batchesRef = collection(db, 'batches');
-      const q = query(batchesRef, where('itemId', '==', movement.itemId), where('lotNumber', '==', movement.lotNumber));
-      const batchSnap = await getDocs(q);
-      
-      if (!batchSnap.empty) {
-        const batchDocId = batchSnap.docs[0].id;
-        const currentQty = batchSnap.docs[0].data().quantity;
-        // If it was ENTRADA, we subtract. If SAIDA, we add back.
-        const reversedQty = movement.type === 'ENTRADA' ? currentQty - movement.quantity : currentQty + movement.quantity;
+      if (movement.itemId && movement.lotNumber) {
+        const batchesRef = collection(db, 'batches');
+        const q = query(batchesRef, where('itemId', '==', movement.itemId), where('lotNumber', '==', movement.lotNumber));
+        const batchSnap = await getDocs(q);
         
-        await updateDoc(doc(db, 'batches', batchDocId), { quantity: reversedQty });
+        if (!batchSnap.empty) {
+          const batchDocId = batchSnap.docs[0].id;
+          const currentQty = batchSnap.docs[0].data().quantity || 0;
+          const reversedQty = movement.type === 'ENTRADA' ? currentQty - movement.quantity : currentQty + movement.quantity;
+          
+          await updateDoc(doc(db, 'batches', batchDocId), { quantity: reversedQty });
+          console.log('Batch updated:', batchDocId, 'New qty:', reversedQty);
+        }
       }
 
       // 2. Reverse Item Total
-      const itemRef = doc(db, 'items', movement.itemId);
-      const itemSnap = await getDoc(itemRef);
-      if (itemSnap.exists()) {
-        const itemData = itemSnap.data() as InventoryItem;
-        const reversedTotal = movement.type === 'ENTRADA' ? (itemData.currentQuantity || 0) - movement.quantity : (itemData.currentQuantity || 0) + movement.quantity;
-        await updateDoc(itemRef, { currentQuantity: reversedTotal });
+      if (movement.itemId) {
+        const itemRef = doc(db, 'items', movement.itemId);
+        const itemSnap = await getDoc(itemRef);
+        if (itemSnap.exists()) {
+          const itemData = itemSnap.data() as InventoryItem;
+          const reversedTotal = movement.type === 'ENTRADA' ? (itemData.currentQuantity || 0) - movement.quantity : (itemData.currentQuantity || 0) + movement.quantity;
+          await updateDoc(itemRef, { currentQuantity: reversedTotal });
+          console.log('Item updated:', movement.itemId, 'New total:', reversedTotal);
+        }
       }
 
-      // 3. Delete movement
+      // 3. Delete movement record
       await deleteDoc(doc(db, 'movements', movement.id));
+      console.log('Movement document deleted successfully');
+      
+      setMovementToDelete(null);
       alert('Movimentação excluída com sucesso!');
     } catch (e) {
+      console.error('Error during movement deletion:', e);
       alert('Erro ao excluir movimentação: ' + (e instanceof Error ? e.message : String(e)));
       handleFirestoreError(e, OperationType.DELETE, 'movements');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -576,995 +1669,9 @@ export default function App() {
     recentMovements: movements.length
   }), [items, movements, expiringBatches]);
 
-  // --- View Components ---
 
-  const Dashboard = () => (
-    <div className="space-y-4">
-      {/* AI Assistant Card */}
-      <Card className="border-none shadow-xl bg-gradient-to-br from-[#EE4D2D] via-[#f53d2d] to-[#ff4d00] text-white overflow-hidden relative group">
-        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
-          <Sparkles className="w-32 h-32 rotate-12" />
-        </div>
-        <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
-          <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
-            <img 
-              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-              alt="Shopito" 
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-          </div>
-          <div className="flex-1 text-center md:text-left">
-            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
-              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Assistant</span>
-              {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
-            </div>
-            <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insights do seu Ambulatório</h3>
-            <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
-              {isLoadingInsight ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                  <span className="text-xs uppercase font-black opacity-50 ml-2">Shopito está analisando os dados...</span>
-                </div>
-              ) : (
-                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para receber recomendações inteligentes baseadas no seu estoque atual!"}</p>
-              )}
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={fetchAiInsight}
-            disabled={isLoadingInsight}
-            className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
-          >
-            Atualizar Insights
-          </Button>
-        </div>
-      </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total no Catálogo', value: stats.totalItems, icon: Box, color: 'text-primary', bg: 'bg-primary/5', border: 'border-primary/10' },
-          { label: 'Alertas de Validade', value: stats.expiringSoon, icon: Clock, color: 'text-accent', bg: 'bg-accent/5', border: 'border-accent/10' },
-          { label: 'Itens Vencidos', value: '00', icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/5', border: 'border-rose-500/10' },
-          { label: 'Fluxo Recente', value: stats.recentMovements, icon: History, color: 'text-secondary', bg: 'bg-secondary/5', border: 'border-secondary/10' },
-        ].map((stat, i) => (
-          <Card key={i} className={cn("p-4 border shadow-sm hover:shadow-md transition-all group", stat.border)}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
-                <p className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
-              </div>
-              <div className={cn("p-2 rounded-xl transition-all group-hover:scale-110", stat.bg)}>
-                <stat.icon className={cn("w-5 h-5", stat.color)} />
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-1.5 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
-                <div className="w-1 h-1 rounded-full bg-current" />
-                <span className="text-[9px] font-bold uppercase tracking-tight">Atualizado agora</span>
-            </div>
-          </Card>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 shadow-sm border-border-base overflow-hidden">
-          <div className="px-6 py-4 border-b border-border-base bg-surface/50 flex items-center justify-between">
-            <h3 className="text-sm font-black text-secondary flex items-center gap-2 uppercase italic tracking-tight">
-                <Box className="w-4 h-4 text-primary" />
-                Panorama do Estoque
-                <span className="text-[10px] text-text-muted font-bold not-italic ml-2 lowercase">({items.length} itens totais)</span>
-            </h3>
-            <Button variant="ghost" className="text-[9px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 hover:text-primary" onClick={() => setActiveTab('stock')}>
-              Abrir Inventário
-            </Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-                <thead className="bg-bg-main/50 text-text-muted font-bold uppercase tracking-widest">
-                    <tr>
-                        <th className="px-6 py-3 border-b border-border-base">Insumo</th>
-                        <th className="px-6 py-3 border-b border-border-base">Categoria</th>
-                        <th className="px-6 py-3 border-b border-border-base text-center">Saldo</th>
-                        <th className="px-6 py-3 border-b border-border-base">Status</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-border-base">
-                    {items.slice(0, 6).map(item => {
-                        const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
-                        return (
-                            <tr key={item.id} className="hover:bg-bg-main/40 transition-colors group">
-                                <td className="px-6 py-4">
-                                  <p className="font-bold text-text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
-                                  <p className="text-[9px] text-text-muted font-mono uppercase mt-0.5">ID: {item.id.slice(0,8)}</p>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <span className="text-[10px] font-bold text-text-muted uppercase bg-bg-main px-2 py-0.5 rounded-sm">
-                                    {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  <span className={cn("text-sm font-black tracking-tight", lowStock ? "text-rose-600" : "text-primary")}>
-                                    {item.currentQuantity}
-                                  </span>
-                                  <span className="text-[10px] text-text-muted font-bold ml-1 uppercase">un</span>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className={cn(
-                                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[9px] font-black uppercase tracking-widest border",
-                                        lowStock 
-                                          ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' 
-                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                                    )}>
-                                        <div className={cn("w-1.5 h-1.5 rounded-full", lowStock ? "bg-rose-600 animate-pulse" : "bg-emerald-600")} />
-                                        {lowStock ? 'Reposição Necessária' : 'Em Conformidade'}
-                                    </div>
-                                </td>
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-4">
-            <Card>
-                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
-                        <TrendingDown className="w-4 h-4 text-rose-500" />
-                        Mais Consumidos
-                    </h3>
-                </div>
-                <div className="p-4 h-[240px]">
-                    {topConsumedItems.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={topConsumedItems} layout="vertical" margin={{ left: -10, right: 30, top: 0, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
-                                <XAxis type="number" hide />
-                                <YAxis 
-                                    dataKey="name" 
-                                    type="category" 
-                                    hide={false} 
-                                    width={80} 
-                                    fontSize={9} 
-                                    fontWeight="bold"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    stroke={theme === 'dark' ? '#888' : '#666'}
-                                />
-                                <Tooltip 
-                                    cursor={{ fill: 'transparent' }}
-                                    contentStyle={{ 
-                                        backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                                        fontSize: '10px',
-                                        padding: '4px 8px',
-                                        color: theme === 'dark' ? '#fff' : '#000'
-                                    }}
-                                />
-                                <Bar dataKey="quantity" radius={[0, 2, 2, 0]} barSize={14}>
-                                    {topConsumedItems.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d00' : '#ff4d0080'} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
-                             <TrendingUp className="w-8 h-8 opacity-20" />
-                             <p className="text-[9px] uppercase font-bold tracking-widest">Sem dados</p>
-                        </div>
-                    )}
-                </div>
-            </Card>
-
-            <Card>
-                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
-                         <AlertTriangle className="w-4 h-4 text-accent" />
-                         Alertas Validade
-                    </h3>
-                </div>
-                <div className="p-4 space-y-3">
-                    {expiringBatches.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-4 text-center">
-                            <CheckCircle2 className="w-8 h-8 text-success/30 mb-2" />
-                            <p className="text-[10px] font-bold text-success uppercase tracking-widest">Tudo em dia!</p>
-                        </div>
-                    ) : expiringBatches.map(batch => (
-                        <div key={batch.id} className="flex items-center gap-3 p-2 bg-rose-50 dark:bg-rose-500/5 rounded-sm border border-rose-100 dark:border-rose-500/10">
-                            <div className="bg-rose-500 text-white p-1 rounded-sm">
-                                <Clock className="w-3 h-3" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 leading-none uppercase tracking-tight">{items.find(i => i.id === batch.itemId)?.name}</p>
-                                <p className="text-[9px] text-rose-500/70 font-bold mt-1">Lote: {batch.lotNumber} • Vence em: {format(new Date(batch.expirationDate), 'dd/MM/yy')}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </Card>
-        </div>
-      </div>
-    </div>
-  );
-  const ItemsView = () => {
-    const [itemsSubTab, setItemsSubTab] = useState<'overview' | 'categories' | 'list'>('overview');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [supplierFilter, setSupplierFilter] = useState('all');
-    
-    // Get unique suppliers for the filter
-    const uniqueSuppliers = useMemo(() => {
-      const suppliers = new Set(items.map(i => i.supplier).filter(Boolean));
-      return Array.from(suppliers).sort();
-    }, [items]);
-
-    const filteredItems = useMemo(() => {
-      return items.filter(i => {
-        const matchesSearch = i.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCategory = categoryFilter === 'all' || i.categoryId === categoryFilter;
-        const matchesSupplier = supplierFilter === 'all' || i.supplier === supplierFilter;
-        let matchesStatus = true;
-        if (statusFilter === 'low') matchesStatus = (i.currentQuantity || 0) <= (i.minQuantity || 5);
-        if (statusFilter === 'out') matchesStatus = (i.currentQuantity || 0) === 0;
-        if (statusFilter === 'ok') matchesStatus = (i.currentQuantity || 0) > (i.minQuantity || 5);
-        
-        return matchesSearch && matchesCategory && matchesStatus && matchesSupplier;
-      });
-    }, [items, searchQuery, categoryFilter, statusFilter, supplierFilter]);
-
-    const categoryStats = useMemo(() => {
-      return categories.map(cat => {
-        const catItems = items.filter(i => i.categoryId === cat.id);
-        return {
-          name: cat.name,
-          value: catItems.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
-          count: catItems.length,
-          color: cat.color || '#EE4D2D'
-        };
-      })
-      .filter(c => c.count > 0)
-      .sort((a, b) => b.value - a.value); // Ordena por maior quantidade
-    }, [items, categories]);
-
-    return (
-      <div className="space-y-6">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 border-b border-border-base mb-6 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'overview', label: 'Catálogo', icon: BarChart3 },
-            { id: 'categories', label: 'Categorias', icon: Tag },
-            { id: 'list', label: 'Lista', icon: List }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setItemsSubTab(tab.id as any)}
-              className={cn(
-                "flex items-center gap-2 px-6 py-3 text-xs font-black uppercase tracking-widest transition-all relative whitespace-nowrap",
-                itemsSubTab === tab.id 
-                  ? "text-primary" 
-                  : "text-text-muted hover:text-text-base"
-              )}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-              {itemsSubTab === tab.id && (
-                <motion.div 
-                  layoutId="items-tab-active"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"
-                />
-              )}
-            </button>
-          ))}
-        </div>
-
-        <AnimatePresence mode="wait">
-          {itemsSubTab === 'overview' && (
-            <motion.div
-              key="overview"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="p-6 border-l-4 border-primary">
-                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total de Itens Cadastrados</p>
-                  <p className="text-3xl font-black text-text-base italic">{items.length}</p>
-                  <div className="mt-4 flex items-center gap-2 text-emerald-500">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span className="text-[9px] font-bold uppercase">Catálogo Ativo</span>
-                  </div>
-                </Card>
-                <Card className="p-6 border-l-4 border-accent">
-                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Total em Estoque</p>
-                  <p className="text-3xl font-black text-text-base italic">{items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)}</p>
-                  <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Unidades totais somadas</p>
-                </Card>
-                <Card className="p-6 border-l-4 border-rose-500">
-                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">Categorias Ativas</p>
-                  <p className="text-3xl font-black text-text-base italic">{categories.length}</p>
-                  <p className="text-[9px] font-bold uppercase text-text-muted mt-4">Distribuição diversificada</p>
-                </Card>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="p-6">
-                  <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
-                    <Grid className="w-4 h-4 text-primary" /> Distribuição por Categoria (Qtd)
-                  </h3>
-                  <div className="h-[360px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart 
-                        data={categoryStats} 
-                        layout="vertical" 
-                        margin={{ left: 10, right: 30, top: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
-                        <XAxis type="number" hide />
-                        <YAxis 
-                          dataKey="name" 
-                          type="category" 
-                          width={120} 
-                          fontSize={9} 
-                          fontWeight="bold"
-                          axisLine={false}
-                          tickLine={false}
-                          stroke={theme === 'dark' ? '#888' : '#666'}
-                          tickFormatter={(value) => value.length > 18 ? `${value.substring(0, 15)}...` : value}
-                        />
-                        <Tooltip 
-                          cursor={{ fill: 'transparent' }}
-                          contentStyle={{ 
-                            backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                            fontSize: '11px',
-                            padding: '8px',
-                            color: theme === 'dark' ? '#fff' : '#000'
-                          }}
-                        />
-                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                          {categoryStats.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-
-                <Card className="p-6">
-                  <h3 className="text-sm font-black text-text-base uppercase italic mb-6 flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary" /> Resumo das Categorias
-                  </h3>
-                  <div className="space-y-4">
-                    {categoryStats.map((cat, idx) => (
-                      <div key={idx} className="flex flex-col gap-1.5">
-                        <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                          <span className="text-text-base">{cat.name}</span>
-                          <span className="text-primary">{cat.value} un</span>
-                        </div>
-                        <div className="w-full h-2 bg-bg-main rounded-full overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(cat.value / items.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 1)) * 100}%` }}
-                            className="h-full bg-primary"
-                          />
-                        </div>
-                        <p className="text-[9px] text-text-muted font-bold uppercase">{cat.count} TIPOS DE INSUMO NESTA CATEGORIA</p>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              </div>
-            </motion.div>
-          )}
-
-          {itemsSubTab === 'categories' && (
-            <motion.div
-              key="categories"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center justify-between bg-surface p-4 rounded-sm border border-border-base">
-                <div className="space-y-1">
-                   <h3 className="text-lg font-black text-text-base uppercase italic">Gestão de Grupos</h3>
-                   <p className="text-[10px] text-text-muted font-bold uppercase">Organize seus insumos por categorias lógicas</p>
-                </div>
-                <Button onClick={() => setIsCategoryModalOpen(true)}>
-                  <Plus className="w-4 h-4" /> Nova Categoria
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {categories.map(cat => (
-                  <Card key={cat.id} className="p-6 hover:border-primary transition-all group border-2 border-transparent">
-                     <div className="flex items-center gap-4 mb-4">
-                        <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
-                        <div className="flex-1">
-                           <h4 className="font-black text-text-base uppercase italic leading-none">{cat.name}</h4>
-                           <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{items.filter(i => i.categoryId === cat.id).length} itens vinculados</p>
-                        </div>
-                     </div>
-                     <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1 h-8 text-[9px]" onClick={() => handleEditCategory(cat)}>
-                           <Edit2 className="w-3 h-3 mr-2" /> Editar
-                        </Button>
-                        <Button variant="outline" className="flex-1 h-8 text-[9px] border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white" onClick={() => handleDeleteCategory(cat)}>
-                           <Trash2 className="w-3 h-3 mr-2" /> Excluir
-                        </Button>
-                     </div>
-                  </Card>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {itemsSubTab === 'list' && (
-            <motion.div
-              key="list"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="space-y-6"
-            >
-              {/* Filters Bar */}
-              <div className="flex flex-col xl:flex-row gap-4 items-center bg-surface p-4 rounded-sm border border-border-base shadow-sm">
-                <div className="relative flex-1 w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input 
-                    placeholder="Pesquisar por nome ou especificação..." 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
-                  />
-                </div>
-                
-                <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
-                   <div className="flex items-center gap-2">
-                      <Filter className="w-3.5 h-3.5 text-text-muted" />
-                      <span className="text-[10px] font-black uppercase text-text-muted">Filtros:</span>
-                   </div>
-                   
-                   <Select 
-                     id="catFilter" 
-                     value={categoryFilter} 
-                     onChange={(e) => setCategoryFilter(e.target.value)}
-                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
-                   >
-                     <option value="all">TODAS CATEGORIAS</option>
-                     {categories.map(c => <option key={c.id} value={c.id}>{c.name.toUpperCase()}</option>)}
-                   </Select>
-
-                   <Select 
-                     id="statusFilter" 
-                     value={statusFilter} 
-                     onChange={(e) => setStatusFilter(e.target.value as any)}
-                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
-                   >
-                     <option value="all">STATUS (TODOS)</option>
-                     <option value="ok">DISPONÍVEL</option>
-                     <option value="low">BAIXO ESTOQUE</option>
-                     <option value="out">INDISPONÍVEL</option>
-                   </Select>
-
-                   <Select 
-                     id="supplierFilter" 
-                     value={supplierFilter} 
-                     onChange={(e) => setSupplierFilter(e.target.value)}
-                     className="h-9 py-0 text-[10px] font-black uppercase tracking-widest min-w-[160px]"
-                   >
-                     <option value="all">FORNECEDOR (TODOS)</option>
-                     {uniqueSuppliers.map(s => <option key={s} value={s}>{s?.toUpperCase()}</option>)}
-                   </Select>
-
-                   <div className="xl:h-8 xl:w-[1px] bg-border-base hidden xl:block" />
-
-                   <Button className="h-9 text-[10px]" onClick={() => { setEditingItem(null); setIsItemModalOpen(true); }}>
-                     <Plus className="w-4 h-4" /> Novo Item
-                   </Button>
-                </div>
-              </div>
-
-              <Card className="overflow-hidden border-border-base">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
-                      <tr>
-                        <th className="px-5 py-3 border-b border-border-base w-[10%]">Status</th>
-                        <th className="px-5 py-3 border-b border-border-base text-left">Insumo</th>
-                        <th className="px-5 py-3 border-b border-border-base">Categoria</th>
-                        <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
-                        <th className="px-5 py-3 border-b border-border-base text-center">Unidade</th>
-                        <th className="px-5 py-3 border-b border-border-base text-center">Mín. Alerta</th>
-                        <th className="px-5 py-3 border-b border-border-base text-right">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-base">
-                      {filteredItems.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-5 py-20 text-center text-text-muted font-bold uppercase tracking-widest opacity-50">
-                            Nenhum item encontrado com os filtros aplicados
-                          </td>
-                        </tr>
-                      ) : filteredItems.map(item => {
-                        const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
-                        const outState = (item.currentQuantity || 0) === 0;
-                        return (
-                          <tr key={item.id} className="hover:bg-bg-main/50 transition-colors group">
-                            <td className="px-5 py-3">
-                              <div className={cn(
-                                "w-2 h-2 rounded-full",
-                                outState ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" : 
-                                lowStock ? "bg-accent shadow-[0_0_8px_rgba(255,165,0,0.5)]" : 
-                                "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                              )} />
-                            </td>
-                            <td className="px-5 py-3">
-                               <p className="font-black text-text-base uppercase italic leading-none group-hover:text-primary transition-colors">{item.name}</p>
-                               <p className="text-[8px] text-text-muted mt-1 uppercase font-bold">ID: {item.id.slice(0,10)}</p>
-                            </td>
-                            <td className="px-5 py-3">
-                              <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
-                                {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3 text-text-muted uppercase font-bold">{item.supplier || '-'}</td>
-                            <td className="px-5 py-3 text-center text-text-muted font-bold uppercase text-[10px]">{item.unit || 'UN'}</td>
-                            <td className="px-5 py-3 text-center">
-                               <span className={cn("text-xs font-black px-2 py-0.5 rounded-sm", lowStock ? "text-rose-500 bg-rose-500/5" : "text-text-muted bg-bg-main")}>
-                                  {item.minQuantity || 5}
-                               </span>
-                            </td>
-                            <td className="px-5 py-3 text-right">
-                              <div className="flex items-center justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                                {item.indication && (
-                                  <button onClick={() => setSelectedItemForIndication(item)} title="Ver indicação" className="text-text-muted hover:text-primary transition-colors">
-                                    <Eye className="w-4 h-4" />
-                                  </button>
-                                )}
-                                <button onClick={() => handleEditItem(item)} title="Editar item" className="text-primary hover:text-accent transition-colors">
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button onClick={() => handleDeleteItem(item.id)} title="Excluir item" className="text-rose-500 hover:text-rose-600 transition-colors">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  };
-
-  const StockView = () => {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [viewType, setViewType] = useState<'grid' | 'table'>('table');
-    const [filter, setFilter] = useState<'all' | 'low'>('all');
-    
-    const filteredItems = useMemo(() => {
-      let result = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
-      if (filter === 'low') {
-        result = result.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
-      }
-      return result;
-    }, [items, searchQuery, filter]);
-
-    const handleDownloadCSV = (type: 'all' | 'critical') => {
-      const targetItems = type === 'all' 
-        ? items 
-        : items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5));
-
-      const headers = ['ID', 'Item', 'Categoria', 'Fornecedor', 'Estoque Atual', 'Estoque Minimo', 'Status'];
-      const rows = targetItems.map(item => [
-        item.id,
-        item.name,
-        categories.find(c => c.id === item.categoryId)?.name || 'Geral',
-        item.supplier || 'N/A',
-        item.currentQuantity,
-        item.minQuantity || 5,
-        (item.currentQuantity || 0) <= (item.minQuantity || 5) ? 'CRITICO' : 'NORMAL'
-      ]);
-
-      const csvContent = [headers, ...rows]
-        .map(row => row.join(','))
-        .join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `estoque_${type}_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
-
-    return (
-      <div className="space-y-6">
-        {/* Header Stats for Stock Page */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-           <Card className="p-4 bg-primary/5 border-primary/10">
-              <div className="flex items-center gap-3">
-                 <div className="bg-primary p-2 rounded-sm text-white"><Box className="w-4 h-4" /></div>
-                 <div>
-                    <p className="text-[10px] font-black uppercase text-text-muted">Insumos Cadastrados</p>
-                    <p className="text-xl font-black text-primary italic">{items.length}</p>
-                 </div>
-              </div>
-           </Card>
-           <Card className="p-4 bg-rose-500/5 border-rose-500/10">
-              <div className="flex items-center gap-3">
-                 <div className="bg-rose-500 p-2 rounded-sm text-white"><TrendingDown className="w-4 h-4" /></div>
-                 <div>
-                    <p className="text-[10px] font-black uppercase text-text-muted">Abaixo do Mínimo</p>
-                    <p className="text-xl font-black text-rose-500 italic">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</p>
-                 </div>
-              </div>
-           </Card>
-
-           <Card className="p-4 bg-surface border-border-base col-span-1 md:col-span-2 flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-[10px] font-black uppercase text-text-muted tracking-widest">Relatórios de Inventário</p>
-                <p className="text-[9px] font-bold text-text-muted/60 uppercase">Exportação em formato CSV para conferência externa</p>
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  className="h-9 text-[9px] font-black uppercase tracking-widest border-rose-500/30 text-rose-600 hover:bg-rose-500 hover:text-white"
-                  onClick={() => handleDownloadCSV('critical')}
-                >
-                  <Download className="w-3 h-3 mr-2" /> Críticos
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="h-9 text-[9px] font-black uppercase tracking-widest"
-                  onClick={() => handleDownloadCSV('all')}
-                >
-                  <Download className="w-3 h-3 mr-2" /> Completo
-                </Button>
-              </div>
-           </Card>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
-          {/* Main Items Section */}
-          <div className="xl:col-span-3 space-y-4">
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-surface p-3 rounded-sm shadow-sm border border-border-base">
-              <div className="relative w-full md:max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                <input 
-                  placeholder="Pesquisar estoque..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-bg-main border border-border-base rounded-sm outline-none focus:border-primary transition-all text-sm text-text-base font-bold"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="flex border border-border-base rounded-sm overflow-hidden bg-bg-main p-0.5">
-                   <button 
-                    onClick={() => setViewType('table')}
-                    className={cn("p-1.5 rounded-sm transition-all", viewType === 'table' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
-                   >
-                     <List className="w-4 h-4" />
-                   </button>
-                   <button 
-                    onClick={() => setViewType('grid')}
-                    className={cn("p-1.5 rounded-sm transition-all", viewType === 'grid' ? "bg-primary text-white" : "text-text-muted hover:text-text-base")}
-                   >
-                     <Grid className="w-4 h-4" />
-                   </button>
-                </div>
-
-                <div className="h-8 w-[1px] bg-border-base mx-1" />
-
-                <Select 
-                  id="filter" 
-                  value={filter} 
-                  onChange={(e) => setFilter(e.target.value as any)}
-                  className="h-9 py-0 text-[10px] font-black uppercase tracking-widest w-40"
-                >
-                   <option value="all">TODOS OS ITENS</option>
-                   <option value="low">BAIXO ESTOQUE</option>
-                </Select>
-              </div>
-            </div>
-
-            {viewType === 'grid' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-                {filteredItems.length === 0 ? (
-                  <div className="col-span-full py-20 text-center bg-surface border border-dashed border-border-base rounded-sm">
-                    <Box className="w-12 h-12 text-text-muted mx-auto mb-4 opacity-20" />
-                    <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Nenhum item em estoque</p>
-                  </div>
-                ) : filteredItems.map(item => (
-                  <Card key={item.id} className="group hover:border-primary transition-all h-full flex flex-col">
-                    <div className="p-4 flex-1 text-text-base">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="min-w-0 pr-2">
-                          <p className="text-[9px] font-black text-primary uppercase tracking-[0.1em] mb-1 truncate">
-                            {categories.find(c => c.id === item.categoryId)?.name || 'Sem Categoria'}
-                          </p>
-                          <h4 className="text-sm font-black text-text-base group-hover:text-primary transition-colors leading-tight mb-1 truncate">
-                            {item.name}
-                          </h4>
-                          <p className="text-[10px] text-text-muted font-bold flex items-center gap-1.5 uppercase">
-                            <Truck className="w-3 h-3" /> {item.supplier || 'N/A'}
-                          </p>
-                        </div>
-                        <div className={cn(
-                          "px-2 py-1 rounded-sm flex flex-col items-center justify-center min-w-[45px] border",
-                          (item.currentQuantity || 0) <= (item.minQuantity || 5) 
-                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' 
-                            : 'bg-bg-main border-border-base text-text-base'
-                        )}>
-                          <span className="text-lg font-black leading-none italic">{item.currentQuantity || 0}</span>
-                          <span className="text-[8px] uppercase font-black mt-0.5">un</span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex gap-2 mt-auto pt-3 border-t border-border-base">
-                        <Button 
-                          variant="outline"
-                          className="flex-1 text-[9px] h-8 border-border-base hover:border-primary hover:text-primary" 
-                          onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                        >
-                          + Entrada
-                        </Button>
-                        <Button 
-                          variant="outline"
-                          className="flex-1 text-[9px] h-8 border-border-base hover:border-danger hover:text-danger" 
-                          onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                        >
-                          - Saída
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <Card className="overflow-hidden border-border-base">
-                 <div className="overflow-x-auto">
-                   <table className="w-full text-left text-[11px]">
-                      <thead className="bg-bg-main text-text-muted font-bold uppercase tracking-tight">
-                         <tr>
-                            <th className="px-5 py-3 border-b border-border-base">Insumo</th>
-                            <th className="px-5 py-3 border-b border-border-base">Categoria</th>
-                            <th className="px-5 py-3 border-b border-border-base text-center">Saldo</th>
-                            <th className="px-5 py-3 border-b border-border-base text-center">Mínimo</th>
-                            <th className="px-5 py-3 border-b border-border-base">Fornecedor</th>
-                            <th className="px-5 py-3 border-b border-border-base text-right font-black">Ações</th>
-                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-base">
-                         {filteredItems.map(item => {
-                            const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
-                            return (
-                               <tr key={item.id} className="hover:bg-bg-main/50 transition-colors">
-                                  <td className="px-5 py-3 font-black text-text-base uppercase italic">{item.name}</td>
-                                  <td className="px-5 py-3">
-                                     <span className="text-[10px] font-bold text-text-muted uppercase px-2 py-0.5 bg-bg-main border border-border-base rounded-full">
-                                        {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
-                                     </span>
-                                  </td>
-                                  <td className="px-5 py-3 text-center">
-                                     <span className={cn("text-sm font-black italic", lowStock ? 'text-rose-500' : 'text-primary')}>
-                                        {item.currentQuantity || 0} un
-                                     </span>
-                                  </td>
-                                  <td className="px-5 py-3 text-center text-text-muted font-bold font-mono">
-                                     {item.minQuantity || 5}
-                                  </td>
-                                  <td className="px-5 py-3 text-text-muted uppercase font-bold text-[9px]">{item.supplier || '-'}</td>
-                                  <td className="px-5 py-3 text-right">
-                                     <div className="flex justify-end gap-1">
-                                        <button 
-                                          className="p-1.5 hover:bg-primary/10 text-primary transition-colors rounded-sm"
-                                          onClick={() => { setMovementType('ENTRADA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                                          title="Entrada"
-                                        >
-                                           <Plus className="w-4 h-4" />
-                                        </button>
-                                        <button 
-                                          className="p-1.5 hover:bg-rose-500/10 text-rose-500 transition-colors rounded-sm"
-                                          onClick={() => { setMovementType('SAIDA'); setSelectedItemForMovement(item); setIsMovementModalOpen(true); }}
-                                          title="Saída"
-                                        >
-                                           <Minus className="w-4 h-4" />
-                                        </button>
-                                     </div>
-                                  </td>
-                               </tr>
-                            );
-                         })}
-                      </tbody>
-                   </table>
-                 </div>
-              </Card>
-            )}
-          </div>
-
-          {/* Summary Sidebar for Stock */}
-          <div className="space-y-4">
-            <Card className="p-5 border border-border-base bg-bg-main/30">
-              <h3 className="font-black text-text-base uppercase tracking-tight italic text-[9px] mb-4 flex items-center gap-2">
-                <Tag className="w-3.5 h-3.5 text-primary" />
-                Resumo por Categoria
-              </h3>
-              <div className="space-y-1.5">
-                {categories.map(cat => {
-                  const count = items.filter(i => i.categoryId === cat.id).length;
-                  if (count === 0) return null;
-                  return (
-                    <div key={cat.id} className="flex items-center justify-between text-[10px] font-bold text-text-muted uppercase">
-                      <span>{cat.name}</span>
-                      <span className="text-primary font-black">{items.filter(i => i.categoryId === cat.id).reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0)} un</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            <Card className="p-5 bg-secondary text-white border-none shadow-xl shadow-secondary/10">
-               <div className="flex items-center gap-3 mb-3">
-                  <Box className="w-4 h-4 text-primary" />
-                  <h4 className="font-black uppercase tracking-widest text-[9px]">Análise Rápida</h4>
-               </div>
-               <div className="space-y-3">
-                  <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
-                     <span className="text-white/40 text-[9px] font-bold uppercase">Variedade</span>
-                     <span className="text-lg font-black italic">{items.length} itens</span>
-                  </div>
-                  <div className="flex justify-between items-end border-b border-white/10 pb-1.5">
-                     <span className="text-white/40 text-[9px] font-bold uppercase">Baixo Estoque</span>
-                     <span className="text-lg font-black italic text-rose-400">{items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length}</span>
-                  </div>
-               </div>
-            </Card>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const ReportsView = () => {
-    const [query, setQuery] = useState('');
-    const [messages, setMessages] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
-    const [isGenerating, setIsGenerating] = useState(false);
-
-    const handleSend = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!query.trim() || isGenerating) return;
-
-      const userMsg = query;
-      setQuery('');
-      setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-      setIsGenerating(true);
-
-      const response = await generateCustomReport(userMsg, items, movements, categories);
-      setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-      setIsGenerating(false);
-    };
-
-    return (
-      <div className="flex flex-col h-[calc(100vh-180px)] space-y-4">
-        <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-          {messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-border-base rounded-xl bg-surface/50">
-               <motion.div 
-                 initial={{ scale: 0.8, opacity: 0 }}
-                 animate={{ scale: 1, opacity: 1 }}
-                 className="relative mb-6"
-               >
-                 <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
-                 <div className="w-28 h-28 rounded-full border-4 border-primary shadow-2xl overflow-hidden relative z-10 bg-white">
-                    <img 
-                      src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-                      alt="Shopito" 
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                 </div>
-               </motion.div>
-               
-               <h3 className="text-xl font-black uppercase italic text-text-base tracking-tight">Gerador de Relatórios Inteligente</h3>
-               <p className="max-w-md text-xs font-bold text-text-muted mt-2 uppercase tracking-widest leading-relaxed">
-                 Olá! Eu sou o Shopito. Me peça para gerar qualquer análise, resumo de consumo ou listas de validade do seu almoxarifado.
-               </p>
-               
-               <div className="grid grid-cols-2 gap-2 mt-8 w-full max-w-sm">
-                  {['Consumo de luvas este mês', 'Itens vencendo em 30 dias', 'Resumo por categoria', 'Maiores fornecedores'].map(s => (
-                    <button 
-                      key={s} 
-                      onClick={() => setQuery(s)}
-                      className="p-2 text-[10px] font-black uppercase text-text-muted bg-surface border border-border-base rounded-sm hover:border-primary transition-all text-left"
-                    >
-                      {s}
-                    </button>
-                  ))}
-               </div>
-            </div>
-          )}
-          {messages.map((m, i) => (
-            <div key={i} className={cn(
-              "flex w-full mb-4",
-              m.role === 'user' ? "justify-end" : "justify-start"
-            )}>
-              <div className={cn(
-                "max-w-[85%] rounded-[4px] p-4 shadow-sm",
-                m.role === 'user' 
-                  ? "bg-primary text-white" 
-                  : "bg-surface border border-border-base text-text-base"
-              )}>
-                {m.role === 'assistant' && (
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border-base/10">
-                    <img 
-                      src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-                      className="w-5 h-5 rounded-full object-cover" 
-                      referrerPolicy="no-referrer"
-                    />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Shopito Assistant</span>
-                  </div>
-                )}
-                <div className={cn("text-sm prose prose-sm max-w-none dark:prose-invert", m.role === 'user' ? "text-white" : "text-text-base")}>
-                   <Markdown>{m.content}</Markdown>
-                </div>
-              </div>
-            </div>
-          ))}
-          {isGenerating && (
-            <div className="flex justify-start">
-               <div className="bg-surface border border-border-base p-4 rounded-[4px] shadow-sm flex items-center gap-3">
-                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-                     <Sparkles className="w-4 h-4 text-primary" />
-                  </motion.div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">Shopito está processando seu relatório...</span>
-               </div>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleSend} className="relative mt-auto">
-          <input 
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            disabled={isGenerating}
-            placeholder="O que você deseja saber sobre o estoque hoje?"
-            className="w-full bg-surface border border-border-base focus:border-primary rounded-sm p-4 pr-14 outline-none transition-all shadow-xl font-bold placeholder:text-text-muted/50 text-sm"
-          />
-          <button 
-            type="submit"
-            disabled={!query.trim() || isGenerating}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-white rounded-sm disabled:opacity-50 hover:bg-accent transition-all"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </form>
-      </div>
-    );
-  };
 
   // --- Auth Guard ---
 
@@ -1736,9 +1843,44 @@ export default function App() {
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="pb-20"
           >
-           {activeTab === 'dashboard' && <Dashboard />}
-           {activeTab === 'items' && <ItemsView />}
-           {activeTab === 'stock' && <StockView />}
+           {activeTab === 'dashboard' && <Dashboard 
+             items={items} 
+             movements={movements} 
+             categories={categories} 
+             stats={stats} 
+             topConsumedItems={topConsumedItems} 
+             aiInsight={aiInsight} 
+             isLoadingInsight={isLoadingInsight} 
+             fetchAiInsight={fetchAiInsight} 
+             setActiveTab={setActiveTab} 
+             expiringBatches={expiringBatches} 
+             theme={theme} 
+           />}
+           {activeTab === 'items' && <ItemsView 
+             items={items} 
+             categories={categories} 
+             theme={theme} 
+             setIsCategoryModalOpen={setIsCategoryModalOpen}
+             handleEditCategory={handleEditCategory}
+             handleDeleteCategory={handleDeleteCategory}
+             setEditingItem={setEditingItem}
+             setIsItemModalOpen={setIsItemModalOpen}
+             setSelectedItemForIndication={setSelectedItemForIndication}
+             handleEditItem={handleEditItem}
+             handleDeleteItem={handleDeleteItem}
+           />}
+           {activeTab === 'stock' && <StockView 
+             items={items} 
+             categories={categories} 
+             setMovementType={setMovementType}
+             setSelectedItemForMovement={setSelectedItemForMovement}
+             setIsMovementModalOpen={setIsMovementModalOpen}
+           />}
+           {activeTab === 'reports' && <ReportsView 
+             items={items} 
+             movements={movements} 
+             categories={categories} 
+           />}
            {activeTab === 'movements' && (
              <div className="space-y-6">
                 <div className="flex gap-4">
@@ -1817,7 +1959,7 @@ export default function App() {
              </Card>
              </div>
            )}
-           {activeTab === 'reports' && <ReportsView />}
+
         </motion.div>
       </div>
     </main>
@@ -2106,6 +2248,60 @@ export default function App() {
               {editingMovement ? 'Salvar Alterações' : `Confirmar ${movementType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
            </Button>
         </form>
+      </Modal>
+
+      {/* Modal de Confirmação de Exclusão */}
+      <Modal
+        isOpen={!!movementToDelete}
+        onClose={() => setMovementToDelete(null)}
+        title="Confirmar Exclusão"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-sm">
+            <AlertTriangle className="w-8 h-8 text-rose-500 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-black text-rose-600 uppercase italic">Atenção!</p>
+              <p className="text-xs text-rose-500/80 font-bold leading-relaxed uppercase tracking-tight">
+                Você está prestes a excluir uma movimentação de {movementToDelete?.type}. 
+                O estoque será ajustado automaticamente para refletir esta mudança.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-bg-main p-4 rounded-sm border border-border-base space-y-3">
+             <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                <span className="text-text-muted">Item:</span>
+                <span className="text-text-base">{items.find(i => i.id === movementToDelete?.itemId)?.name}</span>
+             </div>
+             <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                <span className="text-text-muted">Quantidade:</span>
+                <span className="text-primary">{movementToDelete?.quantity} un</span>
+             </div>
+             <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                <span className="text-text-muted">Lote:</span>
+                <span className="text-text-base">{movementToDelete?.lotNumber}</span>
+             </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button 
+              variant="outline" 
+              className="flex-1" 
+              onClick={() => setMovementToDelete(null)}
+              disabled={isDeleting}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="danger" 
+              className="flex-1" 
+              onClick={confirmDeleteMovement}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Excluindo...' : 'Sim, Excluir'}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
     </div>
