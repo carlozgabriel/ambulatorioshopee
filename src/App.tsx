@@ -1153,6 +1153,12 @@ const StockView = ({
   );
 };
 
+interface ReportsViewProps {
+  items: InventoryItem[];
+  movements: Movement[];
+  categories: Category[];
+}
+
 const ReportsView = ({
   items,
   movements,
