@@ -81,7 +81,8 @@ import {
   Copy,
   Building2,
   DollarSign,
-  ChevronLeft
+  ChevronLeft,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, isPast, isBefore, addDays, parseISO } from 'date-fns';
@@ -91,6 +92,324 @@ import { Category, InventoryItem, Batch, Movement, UserProfile, Unity } from './
 
 import Markdown from 'react-markdown';
 import { generateInventoryInsights, generateCustomReport } from "./lib/gemini";
+
+// --- Financial View Component ---
+
+interface FinancialViewProps {
+  movements: Movement[];
+  items: InventoryItem[];
+  unities: Unity[];
+  activeUnityId: string | null;
+  profile: UserProfile | null;
+  setSelectedMovementForDetail: (m: Movement | null) => void;
+  setIsDetailModalOpen: (open: boolean) => void;
+}
+
+const FinancialView = ({ 
+  movements, 
+  items, 
+  unities, 
+  activeUnityId, 
+  profile,
+  setSelectedMovementForDetail,
+  setIsDetailModalOpen
+}: FinancialViewProps) => {
+  const [activeTab, setActiveTab] = useState<'regular' | 'alerts'>('regular');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [unityFilter, setUnityFilter] = useState(activeUnityId || 'ALL');
+  const [dateStartFilter, setDateStartFilter] = useState('');
+  const [dateEndFilter, setDateEndFilter] = useState('');
+
+  const allFinancialEntradas = useMemo(() => {
+    return movements
+      .filter(m => m.type === 'ENTRADA')
+      .sort((a, b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime());
+  }, [movements]);
+
+  const regularMovements = useMemo(() => {
+    return allFinancialEntradas.filter(m => (m as any).invoiceTotalValue && (m as any).invoiceAttachmentUrl);
+  }, [allFinancialEntradas]);
+
+  const alertMovements = useMemo(() => {
+    return allFinancialEntradas.filter(m => !(m as any).invoiceTotalValue || !(m as any).invoiceAttachmentUrl);
+  }, [allFinancialEntradas]);
+
+  const currentMovements = activeTab === 'regular' ? regularMovements : alertMovements;
+
+  const filteredMovements = useMemo(() => {
+    return currentMovements.filter(m => {
+      const item = items.find(i => i.id === m.itemId);
+      const matchesSearch = 
+        (m as any).invoiceNumber?.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        (m as any).invoiceSupplier?.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        item?.name.toLowerCase().includes(searchFilter.toLowerCase());
+      
+      const matchesUnity = unityFilter === 'ALL' || m.unityId === unityFilter;
+      
+      const movementDate = parseISO(m.timestamp);
+      const matchesDateStart = !dateStartFilter || movementDate >= parseISO(dateStartFilter);
+      const matchesDateEnd = !dateEndFilter || movementDate <= parseISO(dateEndFilter + (dateEndFilter.includes('T') ? '' : 'T23:59:59'));
+
+      return matchesSearch && matchesUnity && matchesDateStart && matchesDateEnd;
+    });
+  }, [currentMovements, searchFilter, unityFilter, dateStartFilter, dateEndFilter, items]);
+
+  const stats = useMemo(() => {
+    const relevantAll = allFinancialEntradas.filter(m => !activeUnityId || m.unityId === activeUnityId);
+    
+    // Total Entrada
+    const totalEntryValue = relevantAll.reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0);
+    const totalItems = relevantAll.reduce((acc, m) => acc + (m.quantity || 0), 0);
+
+    // Com Nota (Complete)
+    const completeEntries = relevantAll.filter(m => (m as any).invoiceTotalValue && (m as any).invoiceAttachmentUrl);
+    const completeValue = completeEntries.reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0);
+    const completeCount = completeEntries.length;
+
+    // Sem Nota (Missing Attachment but has value)
+    const missingAttachmentEntries = relevantAll.filter(m => (m as any).invoiceTotalValue && !(m as any).invoiceAttachmentUrl);
+    const missingAttachmentValue = missingAttachmentEntries.reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0);
+    const missingAttachmentCount = missingAttachmentEntries.length;
+
+    // Alertas (Missing value OR Missing attachment)
+    const alertEntries = relevantAll.filter(m => !(m as any).invoiceTotalValue || !(m as any).invoiceAttachmentUrl);
+    const alertCount = alertEntries.length;
+
+    return {
+      totalEntryValue, totalItems,
+      completeValue, completeCount,
+      missingAttachmentValue, missingAttachmentCount,
+      alertCount
+    };
+  }, [allFinancialEntradas, activeUnityId]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 bg-bg-main border-border-base">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary p-2 rounded-sm text-white">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Total em Entradas</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-lg font-black text-text-base italic">R$ {stats.totalEntryValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p className="text-[9px] font-bold text-text-muted">{stats.totalItems} un</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-emerald-500/5 border-emerald-500/10">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-500 p-2 rounded-sm text-white">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Total com Nota</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-lg font-black text-emerald-600 italic">R$ {stats.completeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p className="text-[9px] font-bold text-emerald-600/60">{stats.completeCount} anexadas</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4 bg-amber-500/5 border-amber-500/10">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500 p-2 rounded-sm text-white">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Total sem Nota</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-lg font-black text-amber-600 italic">R$ {stats.missingAttachmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <p className="text-[9px] font-bold text-amber-600/60">{stats.missingAttachmentCount} não anexadas</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card className={cn("p-4 transition-all", stats.alertCount > 0 ? "bg-rose-500/5 border-rose-500/20" : "bg-bg-main border-border-base")}>
+          <div className="flex items-center gap-3">
+            <div className={cn("p-2 rounded-sm text-white", stats.alertCount > 0 ? "bg-rose-500" : "bg-text-muted")}>
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Entradas com Alerta</p>
+              <p className={cn("text-lg font-black italic", stats.alertCount > 0 ? "text-rose-500" : "text-text-base")}>
+                {stats.alertCount} registros
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        {/* Filtros */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-surface border border-border-base rounded-sm shadow-sm">
+           <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-text-muted">Pesquisar Item/Nota/Fornecedor</label>
+              <div className="relative">
+                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                 <input 
+                   type="text" 
+                   placeholder="Buscar..."
+                   value={searchFilter}
+                   onChange={(e) => setSearchFilter(e.target.value)}
+                   className="w-full bg-bg-main border border-border-base rounded-sm pl-9 pr-3 py-2 text-xs focus:border-primary outline-none"
+                 />
+              </div>
+           </div>
+           {!activeUnityId && (
+              <div className="space-y-1">
+                 <label className="text-[10px] font-black uppercase text-text-muted">Unidade</label>
+                 <select 
+                   value={unityFilter}
+                   onChange={(e) => setUnityFilter(e.target.value)}
+                   className="w-full bg-bg-main border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none"
+                 >
+                    <option value="ALL">Todas as Unidades</option>
+                    {unities.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                 </select>
+              </div>
+           )}
+           <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-text-muted">Data De</label>
+              <input 
+                type="date" 
+                value={dateStartFilter}
+                onChange={(e) => setDateStartFilter(e.target.value)}
+                className="w-full bg-bg-main border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none"
+              />
+           </div>
+           <div className="space-y-1">
+              <label className="text-[10px] font-black uppercase text-text-muted">Data Até</label>
+              <input 
+                type="date" 
+                value={dateEndFilter}
+                onChange={(e) => setDateEndFilter(e.target.value)}
+                className="w-full bg-bg-main border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none"
+              />
+           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-border-base">
+          <button
+            onClick={() => setActiveTab('regular')}
+            className={cn(
+              "px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2",
+              activeTab === 'regular' ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-base"
+            )}
+          >
+            Lançamentos Fiscais
+          </button>
+          <button
+            onClick={() => setActiveTab('alerts')}
+            className={cn(
+              "px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 relative",
+              activeTab === 'alerts' ? "border-rose-500 text-rose-500" : "border-transparent text-text-muted hover:text-rose-500"
+            )}
+          >
+            Alertas de Dados 
+            {stats.alertCount > 0 && (
+              <span className="ml-2 bg-rose-500 text-white px-1.5 py-0.5 rounded-full text-[8px] animate-pulse">
+                {stats.alertCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-bg-main text-text-muted text-[10px] font-black uppercase tracking-widest">
+                <tr>
+                  <th className="px-6 py-4">Data</th>
+                  <th className="px-6 py-4">Item</th>
+                  <th className="px-6 py-4">NF / Série</th>
+                  <th className="px-6 py-4">Unidade</th>
+                  <th className="px-6 py-4 text-right">Valor Total</th>
+                  <th className="px-6 py-4 text-center">Status</th>
+                  <th className="px-6 py-4 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-base">
+                {filteredMovements.map(m => (
+                    <tr key={m.id} className="hover:bg-bg-main/50 transition-colors">
+                      <td className="px-6 py-4 text-xs text-text-muted">
+                        {format(parseISO(m.timestamp), 'dd/MM/yyyy HH:mm')}
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-xs font-bold text-text-base">{items.find(i => i.id === m.itemId)?.name || 'N/A'}</p>
+                        <p className="text-[10px] text-text-muted uppercase">Qtd: {m.quantity}</p>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-[10px] text-text-base">
+                        {(m as any).invoiceNumber ? `${(m as any).invoiceNumber} / ${(m as any).invoiceSeries || '001'}` : 'NÃO INFORMADO'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-[10px] font-black uppercase text-primary">
+                          {unities.find(u => u.id === m.unityId)?.name || 'N/A'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="text-xs font-black text-emerald-600">
+                          R$ {((m as any).invoiceTotalValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                         {!(m as any).invoiceTotalValue ? (
+                           <span className="bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">Sem Dados</span>
+                         ) : !(m as any).invoiceAttachmentUrl ? (
+                           <span className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">Sem Anexo</span>
+                         ) : (
+                           <span className="bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">Completo</span>
+                         )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                           <button 
+                             onClick={() => { setSelectedMovementForDetail(m); setIsDetailModalOpen(true); }}
+                             className="p-1.5 hover:bg-primary/10 text-primary rounded-sm transition-colors"
+                             title="Ver Detalhes"
+                           >
+                             <Eye className="w-4 h-4" />
+                           </button>
+                           {(m as any).invoiceAttachmentUrl && (
+                             <a 
+                               href={(m as any).invoiceAttachmentUrl}
+                               target="_blank"
+                               rel="noreferrer"
+                               className="p-1.5 hover:bg-emerald-500/10 text-emerald-500 rounded-sm transition-colors"
+                               title="Baixar Nota"
+                             >
+                               <Download className="w-4 h-4" />
+                             </a>
+                           )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {filteredMovements.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center">
+                       <div className="flex flex-col items-center gap-2 text-text-muted">
+                          <Search className="w-8 h-8 opacity-20" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Nenhum registro encontrado</p>
+                       </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+};
 
 // --- Components ---
 
@@ -210,18 +529,37 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose:
 );
 
 
-const AdminGlobalDashboard = ({ unities, items, movements, categories, setActiveTab }: { 
+const AdminGlobalDashboard = ({ 
+  unities, 
+  items, 
+  movements, 
+  categories, 
+  setActiveTab,
+  aiInsight,
+  isLoadingInsight,
+  fetchAiInsight
+}: { 
   unities: Unity[], 
   items: InventoryItem[], 
   movements: Movement[], 
   categories: Category[],
-  setActiveTab: (tab: any) => void 
+  setActiveTab: (tab: any) => void,
+  aiInsight: string,
+  isLoadingInsight: boolean,
+  fetchAiInsight: () => void
 }) => {
-  const stats = {
-    totalUnits: unities.length,
-    lowStockTotal: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 0)).length,
-    criticalItems: items.filter(i => (i.currentQuantity || 0) === 0).length,
-  };
+  const stats = useMemo(() => {
+    const totalEntradasValue = movements
+      .filter(m => m.type === 'ENTRADA')
+      .reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0);
+      
+    return {
+      totalUnits: unities.length,
+      lowStockTotal: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 0)).length,
+      criticalItems: items.filter(i => (i.currentQuantity || 0) === 0).length,
+      totalInvested: totalEntradasValue
+    };
+  }, [unities, items, movements]);
 
   // Agrupar consumo por unidade
   const consumptionByUnity = unities.map(u => {
@@ -232,7 +570,51 @@ const AdminGlobalDashboard = ({ unities, items, movements, categories, setActive
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Shopito AI Admin Card */}
+      <Card className="border-none shadow-xl bg-gradient-to-br from-primary via-primary text-white overflow-hidden relative group">
+        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
+          <Sparkles className="w-32 h-32 rotate-12" />
+        </div>
+        <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
+            <img 
+              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+              alt="Shopito" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Estratégico</span>
+              {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
+            </div>
+            <h3 className="text-lg font-black italic uppercase leading-none mb-2">Visão Estratégica da Rede</h3>
+            <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+                  <span className="text-xs uppercase font-black opacity-50 ml-2">Analisando custos e alertas críticos...</span>
+                </div>
+              ) : (
+                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "O Shopito está pronto para analisar os custos e alertas de toda a sua rede de ambulatórios!"}</p>
+              )}
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={fetchAiInsight}
+            disabled={isLoadingInsight}
+            className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
+          >
+            Análise Estratégica
+          </Button>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="p-6 bg-gradient-to-br from-primary/10 to-transparent border-primary/20">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-primary rounded-lg text-white">
@@ -252,6 +634,17 @@ const AdminGlobalDashboard = ({ unities, items, movements, categories, setActive
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Itens em Alerta</p>
               <h3 className="text-2xl font-black text-text-base italic">{stats.lowStockTotal}</h3>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-6 bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/20">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-emerald-500 rounded-lg text-white">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">Total Investido</p>
+              <h3 className="text-xl font-black text-text-base italic">R$ {(stats.totalInvested / 1000).toFixed(1)}k</h3>
             </div>
           </div>
         </Card>
@@ -322,7 +715,17 @@ const AdminGlobalDashboard = ({ unities, items, movements, categories, setActive
   );
 };
 
-const UnitsView = ({ unities, onNewUnit }: { unities: Unity[], onNewUnit: () => void }) => (
+const UnitsView = ({ 
+  unities, 
+  onNewUnit, 
+  onEditUnit, 
+  onDeleteUnit 
+}: { 
+  unities: Unity[], 
+  onNewUnit: () => void,
+  onEditUnit: (u: Unity) => void,
+  onDeleteUnit: (u: Unity) => void
+}) => (
   <div className="space-y-6">
     <div className="flex justify-between items-center">
       <div className="flex flex-col">
@@ -334,21 +737,46 @@ const UnitsView = ({ unities, onNewUnit }: { unities: Unity[], onNewUnit: () => 
       </Button>
     </div>
 
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {unities.map(u => (
-        <Card key={u.id} className="p-6 hover:border-primary/50 transition-all cursor-pointer group relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-3">
-            <Building2 className="w-8 h-8 text-primary/10 group-hover:text-primary/20 transition-colors" />
+        <Card key={u.id} className="p-6 hover:border-primary/50 transition-all group relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 flex gap-2 translate-y-[-100%] group-hover:translate-y-0 transition-transform duration-300">
+             <button 
+               onClick={(e) => { e.stopPropagation(); onEditUnit(u); }}
+               className="p-2 bg-surface border border-border-base rounded-sm text-primary hover:bg-primary hover:text-white transition-all shadow-sm"
+               title="Editar Unidade"
+             >
+                <Edit2 className="w-3.5 h-3.5" />
+             </button>
+             <button 
+               onClick={(e) => { e.stopPropagation(); onDeleteUnit(u); }}
+               className="p-2 bg-surface border border-border-base rounded-sm text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+               title="Excluir Unidade"
+             >
+                <Trash2 className="w-3.5 h-3.5" />
+             </button>
           </div>
+          
+          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Building2 className="w-12 h-12 text-primary" />
+          </div>
+
           <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{u.company}</p>
-          <h3 className="text-xl font-black text-text-base uppercase italic mb-4">{u.name}</h3>
-          <div className="space-y-2 border-t border-border-base pt-4">
-            <div className="flex items-center gap-2 text-text-muted">
-              <User className="w-3 h-3" />
-              <span className="text-[10px] font-bold uppercase tracking-tight truncate">{u.responsibleEmails.join(', ')}</span>
+          <h3 className="text-xl font-black text-text-base uppercase italic mb-4 leading-tight">{u.name}</h3>
+          
+          <div className="space-y-3 border-t border-border-base pt-4">
+            <div className="flex items-start gap-2 text-text-muted">
+              <User className="w-3.5 h-3.5 mt-0.5" />
+              <div className="flex flex-wrap gap-1">
+                {u.responsibleEmails.map((email, idx) => (
+                  <span key={idx} className="text-[9px] font-bold uppercase bg-bg-main px-1.5 py-0.5 rounded-sm border border-border-base/50">
+                    {email}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="flex items-center gap-2 text-text-muted">
-              <MapPin className="w-3 h-3" />
+              <MapPin className="w-3.5 h-3.5" />
               <span className="text-[10px] font-bold uppercase tracking-tight">{u.region}</span>
             </div>
           </div>
@@ -403,6 +831,7 @@ interface StockViewProps {
   profile: UserProfile | null;
   activeUnityId: string | null;
   unities: Unity[];
+  setActiveUnityId: (id: string | null) => void;
 }
 
 interface ReportsViewProps {
@@ -423,221 +852,233 @@ const Dashboard = ({
   setActiveTab, 
   expiringBatches, 
   theme 
-}: DashboardProps) => (
-  <div className="space-y-4">
-    {/* AI Assistant Card */}
-    <Card className="border-none shadow-xl bg-gradient-to-br from-[#EE4D2D] via-[#f53d2d] to-[#ff4d00] text-white overflow-hidden relative group">
-      <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
-        <Sparkles className="w-32 h-32 rotate-12" />
-      </div>
-      <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
-        <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
-          <img 
-            src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-            alt="Shopito" 
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-        <div className="flex-1 text-center md:text-left">
-          <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
-            <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Assistant</span>
-            {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
-          </div>
-          <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insights do seu Ambulatório</h3>
-          <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
-            {isLoadingInsight ? (
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                <span className="text-xs uppercase font-black opacity-50 ml-2">Shopito está analisando os dados...</span>
-              </div>
-            ) : (
-              <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para receber recomendações inteligentes baseadas no seu estoque atual!"}</p>
-            )}
-          </div>
-        </div>
-        <Button 
-          variant="outline" 
-          onClick={fetchAiInsight}
-          disabled={isLoadingInsight}
-          className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
-        >
-          Atualizar Insights
-        </Button>
-      </div>
-    </Card>
+}: DashboardProps) => {
+  const financialStats = useMemo(() => {
+    const totalEntradasValue = movements
+      .filter(m => m.type === 'ENTRADA')
+      .reduce((acc, m) => acc + ((m as any).invoiceTotalValue || 0), 0);
+    
+    return {
+      totalInvested: totalEntradasValue
+    };
+  }, [movements]);
 
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {[
-        { label: 'Total no Catálogo', value: stats.totalItems, icon: Box, color: 'text-primary', bg: 'bg-primary/5', border: 'border-primary/10' },
-        { label: 'Alertas de Validade', value: stats.expiringSoon, icon: Clock, color: 'text-accent', bg: 'bg-accent/5', border: 'border-accent/10' },
-        { label: 'Itens Vencidos', value: '00', icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/5', border: 'border-rose-500/10' },
-        { label: 'Fluxo Recente', value: stats.recentMovements, icon: History, color: 'text-secondary', bg: 'bg-secondary/5', border: 'border-secondary/10' },
-      ].map((stat, i) => (
-        <Card key={i} className={cn("p-4 border shadow-sm hover:shadow-md transition-all group", stat.border)}>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
-              <p className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
+  return (
+    <div className="space-y-4">
+      {/* AI Assistant Card */}
+      <Card className="border-none shadow-xl bg-gradient-to-br from-[#EE4D2D] via-[#f53d2d] to-[#ff4d00] text-white overflow-hidden relative group">
+        <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-all">
+          <Sparkles className="w-32 h-32 rotate-12" />
+        </div>
+        <div className="p-4 relative z-10 flex flex-col md:flex-row items-center gap-6">
+          <div className="w-12 h-12 rounded-full border-4 border-white/30 overflow-hidden shadow-2xl shrink-0 bg-white">
+            <img 
+              src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
+              alt="Shopito" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="flex-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+              <span className="bg-white/20 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-white/30 shadow-inner">Shopito AI Assistant</span>
+              {isLoadingInsight && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}><Sparkles className="w-3 h-3" /></motion.div>}
             </div>
-            <div className={cn("p-2 rounded-xl transition-all group-hover:scale-110", stat.bg)}>
-              <stat.icon className={cn("w-5 h-5", stat.color)} />
+            <h3 className="text-lg font-black italic uppercase leading-none mb-2">Insights do seu Ambulatório</h3>
+            <div className="text-sm font-medium leading-relaxed max-w-2xl opacity-90">
+              {isLoadingInsight ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
+                  <span className="text-xs uppercase font-black opacity-50 ml-2">Shopito está analisando os dados...</span>
+                </div>
+              ) : (
+                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para receber recomendações inteligentes baseadas no seu estoque atual!"}</p>
+              )}
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
-              <div className="w-1 h-1 rounded-full bg-current" />
-              <span className="text-[9px] font-bold uppercase tracking-tight">Atualizado agora</span>
-          </div>
-        </Card>
-      ))}
-    </div>
-
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <Card className="lg:col-span-2 shadow-sm border-border-base overflow-hidden">
-        <div className="px-6 py-4 border-b border-border-base bg-surface/50 flex items-center justify-between">
-          <h3 className="text-sm font-black text-secondary flex items-center gap-2 uppercase italic tracking-tight">
-              <Box className="w-4 h-4 text-primary" />
-              Panorama do Estoque
-              <span className="text-[10px] text-text-muted font-bold not-italic ml-2 lowercase">({items.length} itens totais)</span>
-          </h3>
-          <Button variant="ghost" className="text-[9px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 hover:text-primary" onClick={() => setActiveTab('stock')}>
-            Abrir Inventário
+          <Button 
+            variant="outline" 
+            onClick={fetchAiInsight}
+            disabled={isLoadingInsight}
+            className="bg-white/10 hover:bg-white/20 border-white/30 text-white font-black text-[10px] uppercase h-10 px-6 backdrop-blur-md shrink-0 disabled:opacity-50"
+          >
+            Atualizar Insights
           </Button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-              <thead className="bg-bg-main/50 text-text-muted font-bold uppercase tracking-widest">
-                  <tr>
-                      <th className="px-6 py-3 border-b border-border-base">Insumo</th>
-                      <th className="px-6 py-3 border-b border-border-base">Categoria</th>
-                      <th className="px-6 py-3 border-b border-border-base text-center">Saldo</th>
-                      <th className="px-6 py-3 border-b border-border-base">Status</th>
-                  </tr>
-              </thead>
-              <tbody className="divide-y divide-border-base">
-                  {items.slice(0, 6).map(item => {
-                      const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
-                      return (
-                          <tr key={item.id} className="hover:bg-bg-main/40 transition-colors group">
-                              <td className="px-6 py-4">
-                                <p className="font-bold text-text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
-                                <p className="text-[9px] text-text-muted font-mono uppercase mt-0.5">ID: {item.id.slice(0,8)}</p>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-[10px] font-bold text-text-muted uppercase bg-bg-main px-2 py-0.5 rounded-sm">
-                                  {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <span className={cn("text-sm font-black tracking-tight", lowStock ? "text-rose-600" : "text-primary")}>
-                                  {item.currentQuantity}
-                                </span>
-                                <span className="text-[10px] text-text-muted font-bold ml-1 uppercase">un</span>
-                              </td>
-                              <td className="px-6 py-4">
-                                  <div className={cn(
-                                      "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[9px] font-black uppercase tracking-widest border",
-                                      lowStock 
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' 
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                                  )}>
-                                      <div className={cn("w-1.5 h-1.5 rounded-full", lowStock ? "bg-rose-600 animate-pulse" : "bg-emerald-600")} />
-                                      {lowStock ? 'Reposição Necessária' : 'Em Conformidade'}
-                                  </div>
-                              </td>
-                          </tr>
-                      );
-                  })}
-              </tbody>
-          </table>
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4">
-          <Card>
-              <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
-                      <TrendingDown className="w-4 h-4 text-rose-500" />
-                      Mais Consumidos
-                  </h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total no Catálogo', value: stats.totalItems, icon: Box, color: 'text-primary', bg: 'bg-primary/5', border: 'border-primary/10' },
+          { label: 'Alertas de Validade', value: stats.expiringSoon, icon: Clock, color: 'text-accent', bg: 'bg-accent/5', border: 'border-accent/10' },
+          { label: 'Total Investido', value: `R$ ${(financialStats.totalInvested / 1000).toFixed(1)}k`, icon: DollarSign, color: 'text-emerald-500', bg: 'bg-emerald-500/5', border: 'border-emerald-500/10' },
+          { label: 'Fluxo Recente', value: stats.recentMovements, icon: History, color: 'text-secondary', bg: 'bg-secondary/5', border: 'border-secondary/10' },
+        ].map((stat, i) => (
+          <Card key={i} className={cn("p-4 border shadow-sm hover:shadow-md transition-all group", stat.border)}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1">{stat.label}</p>
+                <p className={cn("text-2xl font-black tracking-tighter", stat.color)}>{stat.value}</p>
               </div>
-              <div className="p-4 h-[240px]">
-                  {topConsumedItems.length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={topConsumedItems} layout="vertical" margin={{ left: -10, right: 30, top: 0, bottom: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
-                              <XAxis type="number" hide />
-                              <YAxis 
-                                  dataKey="name" 
-                                  type="category" 
-                                  hide={false} 
-                                  width={80} 
-                                  fontSize={9} 
-                                  fontWeight="bold"
-                                  axisLine={false}
-                                  tickLine={false}
-                                  stroke={theme === 'dark' ? '#888' : '#666'}
-                              />
-                              <Tooltip 
-                                  cursor={{ fill: 'transparent' }}
-                                  contentStyle={{ 
-                                      backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
-                                      border: 'none',
-                                      borderRadius: '4px',
-                                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                                      fontSize: '10px',
-                                      padding: '4px 8px',
-                                      color: theme === 'dark' ? '#fff' : '#000'
-                                  }}
-                              />
-                              <Bar dataKey="quantity" radius={[0, 2, 2, 0]} barSize={14}>
-                                  {topConsumedItems.map((entry, index) => (
-                                      <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d00' : '#ff4d0080'} />
-                                  ))}
-                              </Bar>
-                          </BarChart>
-                      </ResponsiveContainer>
-                  ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
-                           <TrendingUp className="w-8 h-8 opacity-20" />
-                           <p className="text-[9px] uppercase font-bold tracking-widest">Sem dados</p>
-                      </div>
-                  )}
+              <div className={cn("p-2 rounded-xl transition-all group-hover:scale-110", stat.bg)}>
+                <stat.icon className={cn("w-5 h-5", stat.color)} />
               </div>
+            </div>
+            <div className="mt-4 flex items-center gap-1.5 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all">
+                <div className="w-1 h-1 rounded-full bg-current" />
+                <span className="text-[9px] font-bold uppercase tracking-tight">Atualizado agora</span>
+            </div>
           </Card>
+        ))}
+      </div>
 
-          <Card>
-              <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
-                       <AlertTriangle className="w-4 h-4 text-accent" />
-                       Alertas Validade
-                  </h3>
-              </div>
-              <div className="p-4 space-y-3">
-                  {expiringBatches.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-4 text-center">
-                          <CheckCircle2 className="w-8 h-8 text-success/30 mb-2" />
-                          <p className="text-[10px] font-bold text-success uppercase tracking-widest">Tudo em dia!</p>
-                      </div>
-                  ) : expiringBatches.map(batch => (
-                      <div key={batch.id} className="flex items-center gap-3 p-2 bg-rose-50 dark:bg-rose-500/5 rounded-sm border border-rose-100 dark:border-rose-500/10">
-                          <div className="bg-rose-500 text-white p-1 rounded-sm">
-                              <Clock className="w-3 h-3" />
-                          </div>
-                          <div className="flex-1">
-                              <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 leading-none uppercase tracking-tight">{items.find(i => i.id === batch.itemId)?.name}</p>
-                              <p className="text-[9px] text-rose-500/70 font-bold mt-1">Lote: {batch.lotNumber} • Vence em: {format(new Date(batch.expirationDate), 'dd/MM/yy')}</p>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 shadow-sm border-border-base overflow-hidden">
+          <div className="px-6 py-4 border-b border-border-base bg-surface/50 flex items-center justify-between">
+            <h3 className="text-sm font-black text-secondary flex items-center gap-2 uppercase italic tracking-tight">
+                <Box className="w-4 h-4 text-primary" />
+                Panorama do Estoque
+                <span className="text-[10px] text-text-muted font-bold not-italic ml-2 lowercase">({items.length} itens totais)</span>
+            </h3>
+            <Button variant="ghost" className="text-[9px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 hover:text-primary" onClick={() => setActiveTab('stock')}>
+              Abrir Inventário
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+                <thead className="bg-bg-main/50 text-text-muted font-bold uppercase tracking-widest">
+                    <tr>
+                        <th className="px-6 py-3 border-b border-border-base">Insumo</th>
+                        <th className="px-6 py-3 border-b border-border-base">Categoria</th>
+                        <th className="px-6 py-3 border-b border-border-base text-center">Saldo</th>
+                        <th className="px-6 py-3 border-b border-border-base">Status</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-border-base">
+                    {items.slice(0, 6).map(item => {
+                        const lowStock = (item.currentQuantity || 0) <= (item.minQuantity || 5);
+                        return (
+                            <tr key={item.id} className="hover:bg-bg-main/40 transition-colors group">
+                                <td className="px-6 py-4">
+                                  <p className="font-bold text-text-base leading-tight group-hover:text-primary transition-colors">{item.name}</p>
+                                  <p className="text-[9px] text-text-muted font-mono uppercase mt-0.5">ID: {item.id.slice(0,8)}</p>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-[10px] font-bold text-text-muted uppercase bg-bg-main px-2 py-0.5 rounded-sm">
+                                    {categories.find(c => c.id === item.categoryId)?.name || 'Geral'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  <span className={cn("text-sm font-black tracking-tight", lowStock ? "text-rose-600" : "text-primary")}>
+                                    {item.currentQuantity}
+                                  </span>
+                                  <span className="text-[10px] text-text-muted font-bold ml-1 uppercase">un</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className={cn(
+                                        "inline-flex items-center gap-1.5 px-2 py-1 rounded-sm text-[9px] font-black uppercase tracking-widest border",
+                                        lowStock 
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20' 
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                                    )}>
+                                        <div className={cn("w-1.5 h-1.5 rounded-full", lowStock ? "bg-rose-600 animate-pulse" : "bg-emerald-600")} />
+                                        {lowStock ? 'Reposição Necessária' : 'Em Conformidade'}
+                                    </div>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-4">
+            <Card>
+                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4 text-rose-500" />
+                        Mais Consumidos
+                    </h3>
+                </div>
+                <div className="p-4 h-[240px]">
+                    {topConsumedItems.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={topConsumedItems} layout="vertical" margin={{ left: -10, right: 30, top: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#333' : '#eee'} />
+                                <XAxis type="number" hide />
+                                <YAxis 
+                                    dataKey="name" 
+                                    type="category" 
+                                    hide={false} 
+                                    width={80} 
+                                    fontSize={9} 
+                                    fontWeight="bold"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    stroke={theme === 'dark' ? '#888' : '#666'}
+                                />
+                                <Tooltip 
+                                    cursor={{ fill: 'transparent' }}
+                                    contentStyle={{ 
+                                        backgroundColor: theme === 'dark' ? '#1a1a1a' : '#fff',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                                        fontSize: '10px',
+                                        padding: '4px 8px',
+                                        color: theme === 'dark' ? '#fff' : '#000'
+                                    }}
+                                />
+                                <Bar dataKey="quantity" radius={[0, 2, 2, 0]} barSize={14}>
+                                    {topConsumedItems.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d00' : '#ff4d0080'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-text-muted space-y-2">
+                             <TrendingUp className="w-8 h-8 opacity-20" />
+                             <p className="text-[9px] uppercase font-bold tracking-widest">Sem dados</p>
+                        </div>
+                    )}
+                </div>
+            </Card>
+
+            <Card>
+                <div className="px-5 py-3 border-b border-border-base flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-text-base flex items-center gap-2">
+                         <AlertTriangle className="w-4 h-4 text-accent" />
+                         Alertas Validade
+                    </h3>
+                </div>
+                <div className="p-4 space-y-3">
+                    {expiringBatches.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-4 text-center">
+                            <CheckCircle2 className="w-8 h-8 text-success/30 mb-2" />
+                            <p className="text-[10px] font-bold text-success uppercase tracking-widest">Tudo em dia!</p>
+                        </div>
+                    ) : expiringBatches.map(batch => (
+                        <div key={batch.id} className="flex items-center gap-3 p-2 bg-rose-50 dark:bg-rose-500/5 rounded-sm border border-rose-100 dark:border-rose-500/10">
+                            <div className="bg-rose-500 text-white p-1 rounded-sm">
+                                <Clock className="w-3 h-3" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[10px] font-black text-rose-600 dark:text-rose-400 leading-none uppercase tracking-tight">{items.find(i => i.id === batch.itemId)?.name}</p>
+                                <p className="text-[9px] text-rose-500/70 font-bold mt-1">Lote: {batch.lotNumber} • Vence em: {format(new Date(batch.expirationDate), 'dd/MM/yy')}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Card>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ItemsView = ({
   items,
@@ -1027,7 +1468,8 @@ const StockView = ({
   setIsMovementModalOpen,
   profile,
   activeUnityId,
-  unities
+  unities,
+  setActiveUnityId
 }: StockViewProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewType, setViewType] = useState<'grid' | 'table'>('table');
@@ -1072,8 +1514,70 @@ const StockView = ({
     document.body.removeChild(link);
   };
 
+  if (!activeUnityId && profile?.role === 'admin') {
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-black text-text-base uppercase italic tracking-tighter">Selecione uma Unidade</h2>
+          <p className="text-xs text-text-muted font-bold uppercase tracking-widest">Para visualizar o estoque detalhado, escolha um ambulatório abaixo</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {unities.map(unity => {
+            const unityItems = items.filter(i => i.unityId === unity.id);
+            const lowStockCount = unityItems.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length;
+            
+            return (
+              <button
+                key={unity.id}
+                onClick={() => setActiveUnityId(unity.id)}
+                className="group relative bg-surface border border-border-base rounded-sm p-6 text-left hover:border-primary transition-all hover:shadow-2xl hover:shadow-primary/10 overflow-hidden"
+              >
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Building2 className="w-16 h-16 text-primary" />
+                </div>
+                
+                <div className="relative space-y-4">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black text-primary uppercase tracking-widest">{unity.company}</p>
+                    <h3 className="text-lg font-black text-text-base uppercase italic leading-tight group-hover:text-primary transition-colors">{unity.name}</h3>
+                  </div>
+
+                  <div className="flex gap-4 pt-4 border-t border-border-base">
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] font-black text-text-muted uppercase">Total Itens</p>
+                      <p className="text-sm font-black text-text-base">{unityItems.length}</p>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] font-black text-text-muted uppercase">Baixo Estoque</p>
+                      <p className={cn("text-sm font-black", lowStockCount > 0 ? "text-rose-500" : "text-emerald-500")}>
+                        {lowStockCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center gap-2 text-[10px] font-black text-primary uppercase tracking-widest group-hover:gap-3 transition-all">
+                    Ver Estoque Completo <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {profile?.role === 'admin' && activeUnityId && (
+        <button 
+          onClick={() => setActiveUnityId(null)}
+          className="flex items-center gap-2 text-[10px] font-black text-primary uppercase tracking-widest hover:gap-3 transition-all bg-bg-main px-3 py-1.5 border border-border-base rounded-sm w-fit"
+        >
+          <ChevronLeft className="w-3 h-3" /> Voltar para Seleção de Unidade
+        </button>
+      )}
       {/* Header Stats for Stock Page */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
          <Card className="p-4 bg-primary/5 border-primary/10">
@@ -1623,6 +2127,12 @@ export default function App() {
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [showFiscalInfo, setShowFiscalInfo] = useState(false);
+  const [selectedMovementForDetail, setSelectedMovementForDetail] = useState<Movement | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [movementSearchFilter, setMovementSearchFilter] = useState('');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | 'ENTRADA' | 'SAIDA'>('ALL');
+  const [movementDateStartFilter, setMovementDateStartFilter] = useState('');
+  const [movementDateEndFilter, setMovementDateEndFilter] = useState('');
 
   const handleDeleteMovement = (movement: Movement) => {
     setMovementToDelete(movement);
@@ -1829,16 +2339,21 @@ export default function App() {
   const fetchAiInsight = async () => {
     if (items.length === 0) return;
     setIsLoadingInsight(true);
-    const insight = await generateInventoryInsights(items, movements, categories);
+    const isAdminView = profile?.role === 'admin' && !activeUnityId;
+    const insight = await generateInventoryInsights(items, movements, categories, isAdminView);
     setAiInsight(insight);
     setIsLoadingInsight(false);
   };
 
   useEffect(() => {
+    setAiInsight("");
+  }, [activeUnityId]);
+
+  useEffect(() => {
     if (activeTab === 'dashboard' && !aiInsight && items.length > 0) {
       fetchAiInsight();
     }
-  }, [activeTab, items]);
+  }, [activeTab, items, aiInsight]);
 
   // Sync modal state when opened/closed
   useEffect(() => {
@@ -2084,7 +2599,7 @@ export default function App() {
     );
 
     const unsubMovements = onSnapshot(
-      query(movementsRef, ...(unityFilter ? [where('unityId', '==', unityFilter)] : []), orderBy('timestamp', 'desc')), 
+      query(movementsRef, ...(unityFilter ? [where('unityId', '==', unityFilter)] : [])), 
       (snap) => setMovements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Movement)).slice(0, 100)),
       (e) => handleFirestoreError(e, OperationType.LIST, 'movements')
     );
@@ -2103,6 +2618,20 @@ export default function App() {
       unsubBatches();
     };
   }, [user, profile, activeUnityId]);
+
+  const filteredMovements = movements.filter(m => {
+    const matchesSearch = 
+      m.lotNumber.toLowerCase().includes(movementSearchFilter.toLowerCase()) ||
+      items.find(i => i.id === m.itemId)?.name.toLowerCase().includes(movementSearchFilter.toLowerCase());
+    
+    const matchesType = movementTypeFilter === 'ALL' || m.type === movementTypeFilter;
+    
+    const movementDate = parseISO(m.timestamp);
+    const matchesDateStart = !movementDateStartFilter || movementDate >= parseISO(movementDateStartFilter);
+    const matchesDateEnd = !movementDateEndFilter || movementDate <= parseISO(movementDateEndFilter + (movementDateEndFilter.includes('T') ? '' : 'T23:59:59'));
+
+    return matchesSearch && matchesType && matchesDateStart && matchesDateEnd;
+  });
 
   // --- Auth Guard ---
 
@@ -2180,7 +2709,7 @@ export default function App() {
             ? [
               { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
               { id: 'units', icon: Building2, label: 'Unidades' },
-              { id: 'stock', icon: ShoppingBag, label: 'Estoques Geração' },
+              { id: 'stock', icon: ShoppingBag, label: 'Estoques' },
               { id: 'financial', icon: DollarSign, label: 'Financeiro' },
             ]
             : [
@@ -2234,35 +2763,18 @@ export default function App() {
             <p className="text-[8px] font-black uppercase tracking-widest text-primary italic leading-tight">Módulo</p>
             <h2 className="text-sm font-black italic uppercase tracking-tighter text-text-base leading-none">
               {activeTab === 'dashboard' && 'Visão Geral'}
+              {activeTab === 'units' && 'Unidades'}
               {activeTab === 'items' && 'Catálogo'}
-              {activeTab === 'stock' && 'Estoque Real'}
+              {activeTab === 'stock' && 'Estoque'}
               {activeTab === 'movements' && 'Movimentações'}
+              {activeTab === 'financial' && 'Financeiro'}
             </h2>
           </div>
 
           {/* Centro da Navbar */}
           <div className="absolute left-1/2 -translate-x-1/2 text-center flex flex-col items-center">
-            {profile?.role === 'admin' ? (
-              <select 
-                value={activeUnityId || ''} 
-                onChange={(e) => setActiveUnityId(e.target.value || null)}
-                className="bg-transparent border-none text-center focus:ring-0 cursor-pointer p-0 m-0"
-              >
-                <option value="" className="text-black">VISÃO GLOBAL (C3)</option>
-                {unities.map(u => (
-                  <option key={u.id} value={u.id} className="text-black">{u.name.toUpperCase()} / {u.company.toUpperCase()}</option>
-                ))}
-              </select>
-            ) : (
-              <>
-                <h1 className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-tight">
-                  {unities.find(un => un.id === activeUnityId)?.company || 'SHOPEE'}
-                </h1>
-                <h1 className="text-sm font-black uppercase tracking-tighter text-text-base leading-none italic">
-                  {unities.find(un => un.id === activeUnityId)?.name || 'SOC MG2'}
-                </h1>
-              </>
-            )}
+             <h1 className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-tight">CENTRAL</h1>
+             <h1 className="text-sm font-black uppercase tracking-tighter text-text-base leading-none italic">Ambulatorio C3</h1>
           </div>
 
           {/* Usuário e Função */}
@@ -2294,6 +2806,9 @@ export default function App() {
                  movements={movements} 
                  categories={categories}
                  setActiveTab={setActiveTab}
+                 aiInsight={aiInsight}
+                 isLoadingInsight={isLoadingInsight}
+                 fetchAiInsight={fetchAiInsight}
                />
              ) : (
                <Dashboard 
@@ -2312,7 +2827,15 @@ export default function App() {
              )
            )}
            {activeTab === 'units' && profile?.role === 'admin' && (
-             <UnitsView unities={unities} onNewUnit={() => setIsUnitModalOpen(true)} />
+             <UnitsView unities={unities} 
+                onNewUnit={() => { setEditingUnit(null); setIsUnitModalOpen(true); }} 
+                onEditUnit={(u) => { setEditingUnit(u); setIsUnitModalOpen(true); }}
+                onDeleteUnit={async (u) => {
+                  if (confirm(`Deseja realmente excluir a unidade ${u.name}? Isso removerá o acesso dos responsáveis.`)) {
+                    await deleteDoc(doc(db, 'unities', u.id));
+                  }
+                }}
+ />
            )}
            {activeTab === 'items' && <ItemsView 
              items={items} 
@@ -2336,6 +2859,16 @@ export default function App() {
              profile={profile}
              activeUnityId={activeUnityId}
              unities={unities}
+             setActiveUnityId={setActiveUnityId}
+           />}
+           {activeTab === 'financial' && <FinancialView 
+             movements={movements}
+             items={items}
+             unities={unities}
+             activeUnityId={activeUnityId}
+             profile={profile}
+             setSelectedMovementForDetail={setSelectedMovementForDetail}
+             setIsDetailModalOpen={setIsDetailModalOpen}
            />}
            {activeTab === 'reports' && <ReportsView 
              items={items} 
@@ -2364,6 +2897,54 @@ export default function App() {
                          <h3 className="font-bold text-text-base">Histórico de Movimentações</h3>
                          <Filter className="w-4 h-4 text-text-muted" />
                       </div>
+
+                      {/* Barra de Filtros */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-bg-main border border-border-base rounded-sm">
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black uppercase text-text-muted">Pesquisar</label>
+                             <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                                <input 
+                                  type="text" 
+                                  placeholder="Item ou Lote..."
+                                  value={movementSearchFilter}
+                                  onChange={(e) => setMovementSearchFilter(e.target.value)}
+                                  className="w-full bg-bg-card border border-border-base rounded-sm pl-9 pr-3 py-2 text-xs focus:border-primary outline-none transition-all"
+                                />
+                             </div>
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black uppercase text-text-muted">Tipo</label>
+                             <select 
+                               value={movementTypeFilter}
+                               onChange={(e) => setMovementTypeFilter(e.target.value as any)}
+                               className="w-full bg-bg-card border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none transition-all"
+                             >
+                                <option value="ALL">Todos</option>
+                                <option value="ENTRADA">Entradas</option>
+                                <option value="SAIDA">Saídas</option>
+                             </select>
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black uppercase text-text-muted">De</label>
+                             <input 
+                               type="date" 
+                               value={movementDateStartFilter}
+                               onChange={(e) => setMovementDateStartFilter(e.target.value)}
+                               className="w-full bg-bg-card border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none transition-all text-text-base"
+                             />
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black uppercase text-text-muted">Até</label>
+                             <input 
+                               type="date" 
+                               value={movementDateEndFilter}
+                               onChange={(e) => setMovementDateEndFilter(e.target.value)}
+                               className="w-full bg-bg-card border border-border-base rounded-sm px-3 py-2 text-xs focus:border-primary outline-none transition-all text-text-base"
+                             />
+                          </div>
+                       </div>
+
                    <div className="border border-border-base rounded-sm overflow-hidden">
                       <table className="w-full text-left text-sm">
                          <thead className="bg-bg-main text-text-muted uppercase tracking-tighter font-bold">
@@ -2377,8 +2958,9 @@ export default function App() {
                                <th className="px-6 py-3 text-right">Ações</th>
                             </tr>
                          </thead>
-                         <tbody className="divide-y divide-border-base">
-                            {movements.map(m => (
+                          <tbody className="divide-y divide-border-base">
+                             {filteredMovements.length > 0 ? (
+                               filteredMovements.map(m => (
                                <tr key={m.id} className="hover:bg-bg-main transition-colors">
                                   <td className="px-6 py-4 text-text-muted">{format(parseISO(m.timestamp), 'dd/MM HH:mm')}</td>
                                   <td className="px-6 py-4">
@@ -2396,6 +2978,16 @@ export default function App() {
                                   <td className="px-6 py-4 text-right">
                                      <div className="flex justify-end gap-2">
                                         <button 
+                                          onClick={() => {
+                                            setSelectedMovementForDetail(m);
+                                            setIsDetailModalOpen(true);
+                                          }}
+                                          title="Ver detalhes"
+                                          className="p-1 hover:bg-emerald-500/10 text-emerald-500 transition-colors rounded"
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </button>
+                                        <button 
                                           onClick={() => handleEditMovement(m)}
                                           title="Editar movimentação"
                                           className="p-1 hover:bg-primary/10 text-primary transition-colors rounded"
@@ -2412,8 +3004,29 @@ export default function App() {
                                      </div>
                                   </td>
                                </tr>
-                            ))}
-                         </tbody>
+                             ))
+                           ) : (
+                             <tr>
+                               <td colSpan={7} className="px-6 py-12 text-center">
+                                 <div className="flex flex-col items-center gap-2 text-text-muted">
+                                   <Filter className="w-8 h-8 opacity-20" />
+                                   <p className="text-xs font-bold uppercase tracking-widest">Nenhuma movimentação encontrada com estes filtros</p>
+                                   <button 
+                                     onClick={() => {
+                                       setMovementSearchFilter('');
+                                       setMovementTypeFilter('ALL');
+                                       setMovementDateStartFilter('');
+                                       setMovementDateEndFilter('');
+                                     }}
+                                     className="text-[10px] text-primary hover:underline font-black uppercase"
+                                   >
+                                     Limpar Filtros
+                                   </button>
+                                 </div>
+                               </td>
+                             </tr>
+                           )}
+                          </tbody>
                       </table>
                    </div>
                 </div>
@@ -2956,33 +3569,190 @@ export default function App() {
         </div>
       </Modal>
 
+      {/* Modal de Detalhes da Movimentação */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedMovementForDetail(null);
+        }}
+        title="Detalhes da Movimentação"
+      >
+        {selectedMovementForDetail && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+               <div className="space-y-1">
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Tipo de Registro</p>
+                  <span className={cn(
+                    "inline-block px-3 py-1 rounded-full text-xs font-black tracking-tighter",
+                    selectedMovementForDetail.type === 'ENTRADA' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                  )}>
+                    {selectedMovementForDetail.type}
+                  </span>
+               </div>
+               <div className="text-right space-y-1">
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest">Data e Hora</p>
+                  <p className="text-xs font-bold text-text-base">{format(parseISO(selectedMovementForDetail.timestamp), 'dd/MM/yyyy HH:mm:ss')}</p>
+               </div>
+            </div>
+
+            <div className="p-4 bg-bg-main border border-border-base rounded-sm space-y-4">
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                     <p className="text-[10px] font-black text-text-muted uppercase">Item</p>
+                     <p className="text-sm font-bold text-text-base">{items.find(i => i.id === selectedMovementForDetail.itemId)?.name || 'Item não encontrado'}</p>
+                  </div>
+                  <div className="space-y-1">
+                     <p className="text-[10px] font-black text-text-muted uppercase">Quantidade</p>
+                     <p className="text-sm font-black text-primary">{selectedMovementForDetail.quantity} un</p>
+                  </div>
+                  <div className="space-y-1">
+                     <p className="text-[10px] font-black text-text-muted uppercase">Lote</p>
+                     <p className="text-sm font-mono text-text-base">{selectedMovementForDetail.lotNumber}</p>
+                  </div>
+                  <div className="space-y-1">
+                     <p className="text-[10px] font-black text-text-muted uppercase">Responsável</p>
+                     <p className="text-sm font-bold text-text-base">{selectedMovementForDetail.responsibleName}</p>
+                  </div>
+               </div>
+               {selectedMovementForDetail.notes && (
+                 <div className="pt-3 border-t border-border-base">
+                   <p className="text-[10px] font-black text-text-muted uppercase mb-1">Observações</p>
+                   <p className="text-xs text-text-base leading-relaxed">{selectedMovementForDetail.notes}</p>
+                 </div>
+               )}
+            </div>
+
+            {/* Informações Fiscais */}
+            {(selectedMovementForDetail as any).invoiceNumber && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-text-base">Informações Fiscais</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-3 p-4 bg-primary/5 border border-primary/20 rounded-sm">
+                   <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-primary/60 uppercase">Número da Nota</p>
+                      <p className="text-xs font-bold text-text-base">{(selectedMovementForDetail as any).invoiceNumber}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-primary/60 uppercase">Série</p>
+                      <p className="text-xs font-bold text-text-base">{(selectedMovementForDetail as any).invoiceSeries || '-'}</p>
+                   </div>
+                   <div className="col-span-2 space-y-1">
+                      <p className="text-[10px] font-bold text-primary/60 uppercase">Fornecedor</p>
+                      <p className="text-xs font-bold text-text-base">{(selectedMovementForDetail as any).invoiceSupplier}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-primary/60 uppercase">Emissão</p>
+                      <p className="text-xs font-bold text-text-base">{(selectedMovementForDetail as any).invoiceIssueDate ? format(parseISO((selectedMovementForDetail as any).invoiceIssueDate), 'dd/MM/yyyy') : '-'}</p>
+                   </div>
+                   <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-primary/60 uppercase">Valor Total</p>
+                      <p className="text-xs font-black text-emerald-600">R$ {(selectedMovementForDetail as any).invoiceTotalValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                   </div>
+                </div>
+
+                {(selectedMovementForDetail as any).invoiceAttachmentUrl && (
+                  <div className="flex gap-2">
+                     <a 
+                       href={(selectedMovementForDetail as any).invoiceAttachmentUrl}
+                       target="_blank"
+                       rel="noreferrer"
+                       className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary text-white text-[10px] font-black uppercase tracking-widest rounded-sm hover:bg-primary-hover transition-colors shadow-lg shadow-primary/20"
+                     >
+                       <Eye className="w-3.5 h-3.5" /> Visualizar Nota
+                     </a>
+                     <a 
+                       href={(selectedMovementForDetail as any).invoiceAttachmentUrl}
+                       download
+                       target="_blank"
+                       rel="noreferrer"
+                       className="px-4 flex items-center justify-center bg-bg-main border border-border-base text-text-base rounded-sm hover:border-primary transition-colors"
+                       title="Baixar Nota"
+                     >
+                       <Download className="w-4 h-4" />
+                     </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button 
+              variant="outline" 
+              className="w-full" 
+              onClick={() => {
+                setIsDetailModalOpen(false);
+                setSelectedMovementForDetail(null);
+              }}
+            >
+              Fechar Detalhes
+            </Button>
+          </div>
+        )}
+      </Modal>
+
       {/* Modal de Nova Unidade */}
       <Modal
         isOpen={isUnitModalOpen}
         onClose={() => setIsUnitModalOpen(false)}
-        title="Registrar Novo Ambulatório"
+        title={editingUnit ? "Editar Ambulatório" : "Registrar Novo Ambulatório"}
       >
         <form className="space-y-4" onSubmit={async (e) => {
           e.preventDefault();
           const formData = new FormData(e.target as HTMLFormElement);
+          const data = {
+            name: formData.get('name') as string,
+            company: formData.get('company') as string,
+            region: formData.get('region') as string,
+            responsibleEmails: (formData.get('emails') as string).split(',').map(email => email.trim()),
+          };
+
           try {
-            await addDoc(collection(db, 'unities'), {
-              name: formData.get('name') as string,
-              company: formData.get('company') as string,
-              region: formData.get('region') as string,
-              responsibleEmails: (formData.get('emails') as string).split(',').map(email => email.trim()),
-            });
+            if (editingUnit) {
+              await updateDoc(doc(db, 'unities', editingUnit.id), data);
+            } else {
+              await addDoc(collection(db, 'unities'), data);
+            }
             setIsUnitModalOpen(false);
           } catch (err) {
             handleFirestoreError(err, OperationType.WRITE, 'unities');
           }
         }}>
-          <Input id="company" name="company" label="Empresa / Cliente" placeholder="Ex: Shopee" required />
-          <Input id="name" name="name" label="Nome da Unidade" placeholder="Ex: SOC MG2" required />
-          <Input id="region" name="region" label="Região / Localidade" placeholder="Ex: Ribeirão das Neves, MG" required />
-          <Input id="emails" name="emails" label="Emails dos Responsáveis (Separados por vírgula)" placeholder="admin@shopee.com, gerente@shopee.com" required />
+          <Input 
+            id="company" 
+            name="company" 
+            label="Empresa / Cliente" 
+            placeholder="Ex: Shopee" 
+            required 
+            defaultValue={editingUnit?.company}
+          />
+          <Input 
+            id="name" 
+            name="name" 
+            label="Nome da Unidade" 
+            placeholder="Ex: SOC MG2" 
+            required 
+            defaultValue={editingUnit?.name}
+          />
+          <Input 
+            id="region" 
+            name="region" 
+            label="Região / Localidade" 
+            placeholder="Ex: Ribeirão das Neves, MG" 
+            required 
+            defaultValue={editingUnit?.region}
+          />
+          <Input 
+            id="emails" 
+            name="emails" 
+            label="Emails dos Responsáveis (Separados por vírgula)" 
+            placeholder="admin@shopee.com, gerente@shopee.com" 
+            required 
+            defaultValue={editingUnit?.responsibleEmails.join(', ')}
+          />
           <Button type="submit" variant="primary" className="w-full py-3">
-            Criar Unidade
+            {editingUnit ? "Salvar Alterações" : "Criar Unidade"}
           </Button>
         </form>
       </Modal>

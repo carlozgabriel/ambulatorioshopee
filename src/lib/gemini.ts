@@ -58,7 +58,8 @@ async function callGemini(prompt: string): Promise<string> {
 export const generateInventoryInsights = async (
   items: InventoryItem[],
   movements: Movement[],
-  categories: Category[]
+  categories: Category[],
+  isAdmin: boolean = false
 ): Promise<string> => {
   if (items.length === 0) return "Adicione itens ao catálogo para gerar insights!";
 
@@ -66,18 +67,31 @@ export const generateInventoryInsights = async (
     nome: i.name,
     categoria: categories.find(c => c.id === i.categoryId)?.name || 'Geral',
     saldo: i.currentQuantity,
-    minimo: i.minQuantity || 5
+    minimo: i.minQuantity || 5,
+    valorUnitario: (movements.find(m => m.itemId === i.id && m.type === 'ENTRADA') as any)?.invoiceTotalValue || 0
   }));
 
-  const prompt = `
+  const prompt = isAdmin 
+    ? `
+    Você é o Shopito Admin, assistente estratégico do Ambulatório Shopee (C3). 
+    Sua missão é: REDUZIR CUSTOS e TRAZER ALERTAS CRÍTICOS da rede.
+    Analise os dados globais e gere um insight curto (max 300 caracteres).
+    Foque em: itens caros com baixo giro, desperdício potencial, e unidades com estoque muito crítico.
+    Seja direto, autoritário mas prestativo.
+    
+    ESTOQUE GLOBAL: ${JSON.stringify(stockSummary.slice(0, 40))}
+    
+    Responda em Português do Brasil.
+    `
+    : `
     Você é o Shopito, o assistente inteligente do Ambulatório Shopee. 
     Analise o estoque e gere um insight curto (max 280 caracteres).
     Foque em reposição e padrões. Seja direto e prestativo.
     
-    ESTOQUE: ${JSON.stringify(stockSummary)}
+    ESTOQUE: ${JSON.stringify(stockSummary.slice(0, 40))}
     
     Responda em Português do Brasil de forma amigável.
-  `;
+    `;
 
   try {
     return await callGemini(prompt);
