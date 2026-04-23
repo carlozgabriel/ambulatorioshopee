@@ -94,7 +94,7 @@ export const generateCustomReport = async (
 ): Promise<string> => {
   const prompt = `
     Você é o Analista Chefe do Ambulatório Shopee. 
-    Sua tarefa é gerar um RELATÓRIO TÉCNICO E DETALHADO em Markdown.
+    Sua tarefa é gerar um RELATÓRIO TÉCNICO E DETALHADO em Markdown profissional.
     
     PERGUNTA DO USUÁRIO: "${query}"
     
@@ -106,14 +106,15 @@ export const generateCustomReport = async (
       unidade: i.unit,
       minimo: i.minQuantity
     })))}
-    - Histórico de Movimentações: ${JSON.stringify(movements.slice(0, 50))}
+    - Histórico de Movimentações (Amostra): ${JSON.stringify(movements.slice(0, 100))}
     
-    REGRAS OBRIGATÓRIAS:
-    1. Não comece com "Olá" ou introduções longas. Vá direto aos dados.
-    2. USE TABELAS MARKDOWN para comparar saldos e categorias.
-    3. Identifique itens com "REPOSIÇÃO NECESSÁRIA" se o saldo for menor que o mínimo.
-    4. Se o usuário pedir um resumo, faça uma análise profunda, não apenas uma frase.
-    5. O relatório deve ser profissional, limpo e rico em informações.
+    REGRAS DE FORMATAÇÃO (ESTRITAMENTE OBRIGATÓRIO):
+    1. Use TÍTULOS (##) para seções.
+    2. Use TABELAS (| Coluna |) para dados comparativos.
+    3. Use NEGRITO (**Texto**) para destacar alertas ou números críticos.
+    4. Crie uma seção de "RECOMENDAÇÕES" ao final com listas (-).
+    5. Não use introduções sociais (Olá, Tudo bem, etc).
+    6. Formate o texto para ser legível e profissional.
     
     RESPONDA EM PORTUGUÊS DO BRASIL.
   `;

@@ -91,6 +91,7 @@ import { cn } from './lib/utils';
 import { Category, InventoryItem, Batch, Movement, UserProfile, Unity } from './types';
 
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { generateInventoryInsights, generateCustomReport } from "./lib/gemini";
 
 // --- Financial View Component ---
@@ -1928,7 +1929,9 @@ const ReportsView = ({
                   <span className="text-xs uppercase font-black opacity-50 ml-2">Analisando dados...</span>
                 </div>
               ) : (
-                <p className="font-sans line-clamp-3 md:line-clamp-none whitespace-pre-line">{aiInsight || "Clique em atualizar para uma análise rápida dos dados atuais!"}</p>
+                <div className="prose prose-xs dark:prose-invert prose-orange max-w-none">
+                  <Markdown remarkPlugins={[remarkGfm]}>{aiInsight || "Clique em atualizar para uma análise rápida dos dados atuais!"}</Markdown>
+                </div>
               )}
             </div>
           </div>
@@ -2029,8 +2032,8 @@ const ReportsView = ({
               <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse italic">Shopito está redigindo o relatório...</p>
             </div>
           ) : currentReport ? (
-            <div className="prose prose-invert prose-orange max-w-none animate-in fade-in duration-500">
-               <Markdown>{currentReport}</Markdown>
+            <div className="prose prose-sm dark:prose-invert prose-orange max-w-none animate-in fade-in duration-500 font-sans">
+               <Markdown remarkPlugins={[remarkGfm]}>{currentReport}</Markdown>
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center py-40 opacity-20 text-center">
