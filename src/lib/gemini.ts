@@ -1,10 +1,16 @@
 import { InventoryItem, Movement, Category } from "../types";
 
 // Configurações do OpenRouter
-const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || "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";
+// IMPORTANTE: Nunca coloque a chave diretamente aqui. Configure no Vercel/Ambiente.
+const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || "";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 async function callAI(prompt: string): Promise<string> {
+  if (!OPENROUTER_KEY) {
+    console.error("AI Assistant: API Key não encontrada em VITE_OPENROUTER_API_KEY");
+    throw new Error("Configuração de IA ausente.");
+  }
+
   try {
     const response = await fetch(OPENROUTER_URL, {
       method: "POST",
@@ -15,7 +21,7 @@ async function callAI(prompt: string): Promise<string> {
         "X-Title": "C3 Ambulatorio"
       },
       body: JSON.stringify({
-        model: "google/gemini-flash-1.5", 
+        model: "openai/gpt-4o-mini", // Alterado para GPT conforme solicitado
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 1000
