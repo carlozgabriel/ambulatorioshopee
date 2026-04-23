@@ -1159,124 +1159,167 @@ const ReportsView = ({
   const [query, setQuery] = useState('');
   const [currentReport, setCurrentReport] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleGenerateReport = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!query.trim() || isGenerating) return;
 
     setIsGenerating(true);
+    setIsModalOpen(false);
     try {
       const response = await generateCustomReport(query, items, movements, categories);
       setCurrentReport(response);
     } catch (error) {
-      setCurrentReport("### Erro na Geração\nNão foi possível conectar ao Shopito. Verifique sua conexão ou a chave da API.");
+      setCurrentReport("### Erro na Geração\nNão foi possível conectar ao Shopito.");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-160px)] max-w-5xl mx-auto space-y-6">
-      {/* Header com Ações Rápidas */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            <h2 className="text-2xl font-black uppercase italic text-text-base tracking-tighter">Shopito Intelligence</h2>
-          </div>
-          <p className="text-[10px] font-bold text-text-muted uppercase tracking-[0.2em] mt-1">Gere relatórios analíticos em segundos</p>
-        </div>
-        
-        <div className="flex gap-2">
-          {['Resumo de Estoque', 'Alertas de Validade', 'Giro Mensal'].map(btn => (
-            <button 
-              key={btn}
-              onClick={() => {
-                setQuery(`Gere um ${btn.toLowerCase()} detalhado.`);
-                // O useEffect ou um timer poderia disparar, mas vamos deixar o usuário clicar em enviar
-              }}
-              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest bg-surface border border-border-base rounded-[4px] hover:border-primary transition-all text-text-muted hover:text-primary"
-            >
-              {btn}
-            </button>
-          ))}
-        </div>
-      </div>
+  const copyToClipboard = () => {
+    if (!currentReport) return;
+    navigator.clipboard.writeText(currentReport);
+    alert("Relatório copiado para a área de transferência!");
+  };
 
-      {/* Área do Documento */}
-      <div className="flex-1 bg-surface border border-border-base rounded-[4px] shadow-2xl overflow-hidden flex flex-col relative group">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary/50 via-primary to-primary/50 opacity-50" />
-        
-        <div className="p-4 border-b border-border-base bg-surface-variant/20 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted">Relatório Analítico Gerado</span>
-          </div>
-          {currentReport && (
+  const downloadReport = () => {
+    if (!currentReport) return;
+    const element = document.createElement("a");
+    const file = new Blob([currentReport], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `relatorio-shopito-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(element);
+    element.click();
+  };
+
+  return (
+    <div className="relative h-[calc(100vh-140px)] flex flex-col">
+      {/* Header de Ações */}
+      <div className="flex justify-between items-center mb-4 bg-surface/50 p-2 rounded-sm border border-border-base">
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="px-4 py-2 bg-primary text-white font-black uppercase italic rounded-sm shadow-lg hover:bg-accent transition-all flex items-center gap-2 text-xs"
+          >
+            <Sparkles className="w-4 h-4" />
+            Solicitar Nova Análise
+          </button>
+        </div>
+
+        {currentReport && (
+          <div className="flex gap-2">
+            <button 
+              onClick={copyToClipboard}
+              className="p-2 bg-surface border border-border-base hover:border-primary rounded-sm transition-all text-text-muted hover:text-primary flex items-center gap-2 text-[10px] font-bold uppercase"
+              title="Copiar Texto"
+            >
+              <Copy className="w-4 h-4" />
+              Copiar
+            </button>
+            <button 
+              onClick={downloadReport}
+              className="p-2 bg-surface border border-border-base hover:border-primary rounded-sm transition-all text-text-muted hover:text-primary flex items-center gap-2 text-[10px] font-bold uppercase"
+              title="Baixar Arquivo"
+            >
+              <Download className="w-4 h-4" />
+              Baixar
+            </button>
             <button 
               onClick={() => window.print()}
-              className="p-2 hover:bg-surface-variant rounded-full transition-all text-text-muted"
-              title="Imprimir Relatório"
+              className="p-2 bg-surface border border-border-base hover:border-primary rounded-sm transition-all text-text-muted hover:text-primary flex items-center gap-2 text-[10px] font-bold uppercase"
+              title="Imprimir"
             >
               <FileText className="w-4 h-4" />
+              Imprimir
             </button>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar">
+      {/* Visualizador de Documento */}
+      <div className="flex-1 overflow-y-auto bg-surface-variant/10 rounded-sm p-4 md:p-8 custom-scrollbar">
+        <div className="max-w-4xl mx-auto bg-surface border border-border-base shadow-2xl min-h-full p-8 md:p-16 relative">
+          {/* Marca d'água ou Detalhe de Topo */}
+          <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
+          
           {isGenerating ? (
-            <div className="h-full flex flex-col items-center justify-center space-y-6">
-               <motion.div 
-                 animate={{ 
-                   scale: [1, 1.1, 1],
-                   rotate: [0, 90, 180, 270, 360]
-                 }}
-                 transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
-                 className="relative"
-               >
-                 <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full scale-150" />
-                 <img 
-                    src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-                    className="w-20 h-20 rounded-full border-4 border-primary shadow-2xl relative z-10" 
-                    referrerPolicy="no-referrer"
-                 />
-               </motion.div>
-               <div className="text-center">
-                 <h3 className="text-xl font-black uppercase italic text-primary animate-pulse tracking-tighter">Processando Dados...</h3>
-                 <p className="text-xs font-bold text-text-muted uppercase tracking-widest mt-2">O Shopito está organizando seu almoxarifado</p>
-               </div>
+            <div className="flex flex-col items-center justify-center py-20 space-y-6">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full"
+              />
+              <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse italic">Shopito está redigindo o relatório...</p>
             </div>
           ) : currentReport ? (
-            <div className="prose prose-invert prose-sm max-w-none animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="prose prose-invert prose-orange max-w-none animate-in fade-in duration-500">
                <Markdown>{currentReport}</Markdown>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
-               <FileText className="w-20 h-20 mb-4 text-text-muted" />
-               <p className="text-sm font-black uppercase tracking-widest text-text-muted">Aguardando comando de análise...</p>
+            <div className="h-full flex flex-col items-center justify-center py-40 opacity-20 text-center">
+              <FileText className="w-32 h-32 mb-6" />
+              <h3 className="text-2xl font-black uppercase italic tracking-tight">Nenhum relatório ativo</h3>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] mt-2">Clique em "Solicitar Nova Análise" para começar</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Barra de Comando */}
-      <form onSubmit={handleGenerateReport} className="relative">
-        <textarea 
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={isGenerating}
-          rows={2}
-          placeholder="O que você deseja que o Shopito analise hoje? Ex: 'Relatório de consumo mensal' ou 'Checklist de itens críticos'..."
-          className="w-full bg-surface border-2 border-border-base focus:border-primary rounded-[8px] p-4 pr-20 outline-none transition-all shadow-xl text-sm font-medium placeholder:text-text-muted/40 resize-none"
-        />
-        <button 
-          type="submit"
-          disabled={!query.trim() || isGenerating}
-          className="absolute right-3 top-1/2 -translate-y-1/2 px-6 py-3 bg-primary text-white font-black uppercase italic rounded-[4px] shadow-lg hover:bg-accent transition-all active:scale-95 text-xs disabled:opacity-50"
-        >
-          {isGenerating ? 'Gerando...' : 'Gerar Relatório'}
-        </button>
-      </form>
+      {/* Modal de Solicitação */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsModalOpen(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-xl bg-surface border border-border-base rounded-sm shadow-2xl p-6"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase italic tracking-tighter">O que o Shopito deve analisar?</h3>
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Descreva os detalhes do relatório desejado</p>
+                </div>
+              </div>
+
+              <textarea 
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Ex: 'Faça um levantamento de todos os itens com estoque zerado e sugira a quantidade de reposição baseada no histórico'..."
+                className="w-full bg-background border border-border-base focus:border-primary rounded-sm p-4 outline-none transition-all text-sm min-h-[120px] resize-none mb-6"
+              />
+
+              <div className="flex gap-3 justify-end">
+                <button 
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-base transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => handleGenerateReport()}
+                  disabled={!query.trim() || isGenerating}
+                  className="px-8 py-3 bg-primary text-white font-black uppercase italic rounded-sm shadow-xl hover:bg-accent transition-all disabled:opacity-50"
+                >
+                  {isGenerating ? 'Processando...' : 'Gerar Análise'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
