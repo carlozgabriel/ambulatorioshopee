@@ -1,13 +1,20 @@
 import { InventoryItem, Movement, Category } from "../types";
 
 // Configurações do OpenRouter
-const OPENROUTER_API_KEY = "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";
+const getApiKey = () => {
+  const key = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || 
+              process.env.OPENROUTER_API_KEY || 
+              "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";
+  return key?.trim();
+};
+
+const OPENROUTER_API_KEY = getApiKey();
 const OPENROUTER_MODEL = "openai/gpt-oss-120b:free";
 
 async function callOpenRouter(prompt: string): Promise<string> {
   if (!OPENROUTER_API_KEY) {
-    console.error("OpenRouter API Key não configurada.");
-    throw new Error("API Key não configurada.");
+    console.error("OpenRouter API Key não encontrada.");
+    throw new Error("Chave de API ausente.");
   }
 
   try {
@@ -16,8 +23,8 @@ async function callOpenRouter(prompt: string): Promise<string> {
       headers: {
         "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Ambulatório Shopee"
+        "HTTP-Referer": typeof window !== 'undefined' ? window.location.origin : "http://localhost:3000",
+        "X-Title": "Ambulatorio Shopee AI"
       },
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
@@ -26,8 +33,9 @@ async function callOpenRouter(prompt: string): Promise<string> {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenRouter error: ${response.status} - ${err}`);
+      const err = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+      console.error("OpenRouter Error Details:", err);
+      throw new Error(`OpenRouter error: ${response.status} - ${err.error?.message || "Unknown error"}`);
     }
 
     const data = await response.json();
@@ -37,6 +45,7 @@ async function callOpenRouter(prompt: string): Promise<string> {
     throw error;
   }
 }
+
 
 export const generateInventoryInsights = async (
   items: InventoryItem[],
