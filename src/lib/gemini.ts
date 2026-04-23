@@ -92,17 +92,29 @@ export const generateCustomReport = async (
   categories: Category[]
 ): Promise<string> => {
   const prompt = `
-    Você é o Shopito, assistente do Ambulatório Shopee.
-    O usuário quer: "${query}"
+    Você é o Analista Chefe do Ambulatório Shopee. 
+    Sua tarefa é gerar um RELATÓRIO TÉCNICO E DETALHADO em Markdown.
     
-    DADOS:
-    - Itens: ${JSON.stringify(items.map(i => ({
+    PERGUNTA DO USUÁRIO: "${query}"
+    
+    DADOS DISPONÍVEIS:
+    - Itens no Catálogo: ${JSON.stringify(items.map(i => ({
       nome: i.name,
       cat: categories.find(c => c.id === i.categoryId)?.name || 'Geral',
-      saldo: i.currentQuantity
+      saldo: i.currentQuantity,
+      unidade: i.unit,
+      minimo: i.minQuantity
     })))}
+    - Histórico de Movimentações: ${JSON.stringify(movements.slice(0, 50))}
     
-    Responda de forma organizada em Markdown. Seja preciso.
+    REGRAS OBRIGATÓRIAS:
+    1. Não comece com "Olá" ou introduções longas. Vá direto aos dados.
+    2. USE TABELAS MARKDOWN para comparar saldos e categorias.
+    3. Identifique itens com "REPOSIÇÃO NECESSÁRIA" se o saldo for menor que o mínimo.
+    4. Se o usuário pedir um resumo, faça uma análise profunda, não apenas uma frase.
+    5. O relatório deve ser profissional, limpo e rico em informações.
+    
+    RESPONDA EM PORTUGUÊS DO BRASIL.
   `;
 
   try {
@@ -111,6 +123,7 @@ export const generateCustomReport = async (
     return "Erro ao gerar relatório com o Gemini.";
   }
 };
+
 
 
 
