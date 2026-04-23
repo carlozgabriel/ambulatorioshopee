@@ -1,56 +1,36 @@
 import { InventoryItem, Movement, Category } from "../types";
 
-// Configurações do Google Gemini (Direto)
-const getApiKey = () => {
-  // Tenta várias fontes possíveis para a chave
-  const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-              process.env.VITE_GEMINI_API_KEY ||
-              process.env.GEMINI_API_KEY ||
-              "";
-  
-  if (key && key.trim().startsWith("AIza")) {
-    const maskedKey = `${key.trim().substring(0, 6)}...${key.trim().substring(key.trim().length - 4)}`;
-    console.log(`Shopito: Conexão com Google Gemini preparada. (Key: ${maskedKey})`);
-    return key.trim();
-  }
-  return "";
-};
+// Configurações do OpenRouter
+const OPENROUTER_KEY = "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";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-
-const API_KEY = getApiKey();
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
-
-
-
-
-
-
-
-async function callGemini(prompt: string): Promise<string> {
-  if (!API_KEY) {
-    console.error("Shopito: API Key do Gemini não encontrada.");
-    throw new Error("Chave de API ausente.");
-  }
-
+async function callAI(prompt: string): Promise<string> {
   try {
-    const response = await fetch(GEMINI_URL, {
+    const response = await fetch(OPENROUTER_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENROUTER_KEY}`,
+        "HTTP-Referer": "https://ambulatorioshopee.vercel.app/",
+        "X-Title": "C3 Ambulatorio"
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
+        model: "google/gemini-2.0-flash-001", // Modelo rápido e eficiente
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 1000
       })
     });
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(`Gemini Error: ${response.status} - ${err.error?.message || "Unknown error"}`);
+      throw new Error(`AI Error: ${response.status} - ${err.error?.message || "Unknown error"}`);
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return data.choices?.[0]?.message?.content || "";
   } catch (error) {
-    console.error("Shopito Call Error:", error);
+    console.error("AI Assistant Error:", error);
     throw error;
   }
 }
@@ -94,9 +74,9 @@ export const generateInventoryInsights = async (
     `;
 
   try {
-    return await callGemini(prompt);
+    return await callAI(prompt);
   } catch (error) {
-    return "Ops! O Shopito teve um contratempo. Verifique se a chave do Gemini está correta na Vercel.";
+    return "Ops! O Shopito teve um contratempo ao conectar com o OpenRouter. Verifique o saldo ou a chave da API.";
   }
 };
 
@@ -133,9 +113,9 @@ export const generateCustomReport = async (
   `;
 
   try {
-    return await callGemini(prompt);
+    return await callAI(prompt);
   } catch (error) {
-    return "Erro ao gerar relatório com o Gemini.";
+    return "Erro ao gerar relatório com o OpenRouter.";
   }
 };
 
