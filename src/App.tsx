@@ -1840,11 +1840,6 @@ const StockView = ({
   );
 };
 
-interface ReportsViewProps {
-  items: InventoryItem[];
-  movements: Movement[];
-  categories: Category[];
-}
 
 const ReportsView = ({
   items,
@@ -2131,7 +2126,7 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'stock' | 'movements' | 'units' | 'financial'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'stock' | 'movements' | 'units' | 'financial' | 'reports'>('dashboard');
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -2800,12 +2795,14 @@ export default function App() {
               { id: 'units', icon: Building2, label: 'Unidades' },
               { id: 'stock', icon: ShoppingBag, label: 'Estoques' },
               { id: 'financial', icon: DollarSign, label: 'Financeiro' },
+              { id: 'reports', icon: FileText, label: 'Relatórios' },
             ]
             : [
               { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
               { id: 'items', icon: Package, label: 'Catálogo' },
               { id: 'stock', icon: ShoppingBag, label: 'Estoque Real' },
               { id: 'movements', icon: History, label: 'Movimentações' },
+              { id: 'reports', icon: FileText, label: 'Relatórios' },
             ]
           ).map(tab => (
             <button
