@@ -1,7 +1,17 @@
+export interface Unity {
+  id: string;
+  name: string;
+  company: string;
+  city: string;
+  state: string;
+  responsibleEmails: string[];
+  createdAt: string;
+}
+
 export interface Category {
   id: string;
   name: string;
-  color?: string;
+  unityId: string;
 }
 
 export interface InventoryItem {
@@ -13,6 +23,8 @@ export interface InventoryItem {
   currentQuantity: number;
   minQuantity?: number;
   indication?: string;
+  unityId: string;
+  purchasePrice?: number; // Custo unitário médio
 }
 
 export interface Batch {
@@ -21,6 +33,8 @@ export interface Batch {
   lotNumber: string;
   expirationDate: string; // ISO String
   quantity: number;
+  unityId: string;
+  costPrice?: number; // Custo específico deste lote
 }
 
 export interface Movement {
@@ -34,11 +48,14 @@ export interface Movement {
   responsibleUid: string;
   timestamp: string; // ISO String
   notes?: string;
+  unityId: string;
+  unitPrice?: number; // Preço no momento da movimentação
 }
 
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'manager' | 'user';
+  unityId?: string; // Atribuído apenas se manager/user
 }

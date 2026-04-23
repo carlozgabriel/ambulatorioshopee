@@ -74,13 +74,15 @@ import {
   Trash2,
   Edit2,
   Copy,
+  Building2,
+  DollarSign,
   ChevronLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, isPast, isBefore, addDays, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from './lib/utils';
-import { Category, InventoryItem, Batch, Movement, UserProfile } from './types';
+import { Category, InventoryItem, Batch, Movement, UserProfile, Unity } from './types';
 
 import Markdown from 'react-markdown';
 import { generateInventoryInsights, generateCustomReport } from "./lib/gemini";
@@ -519,13 +521,14 @@ const ItemsView = ({
   }, [items, searchQuery, categoryFilter, statusFilter, supplierFilter]);
 
   const categoryStats = useMemo(() => {
-    return categories.map(cat => {
+    const COLORS = ['#EE4D2D', '#ff7043', '#ff8a65', '#ffb74d', '#ffd54f', '#aed581', '#4db6ac', '#4dd0e1', '#64b5f6', '#9575cd'];
+    return categories.map((cat, idx) => {
       const catItems = items.filter(i => i.categoryId === cat.id);
       return {
         name: cat.name,
         value: catItems.reduce((acc, curr) => acc + (curr.currentQuantity || 0), 0),
         count: catItems.length,
-        color: cat.color || '#EE4D2D'
+        color: COLORS[idx % COLORS.length]
       };
     })
     .filter(c => c.count > 0)
@@ -686,10 +689,13 @@ const ItemsView = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {categories.map(cat => (
+              {categories.map((cat, idx) => {
+                const COLORS = ['#EE4D2D', '#ff7043', '#ff8a65', '#ffb74d', '#ffd54f', '#aed581', '#4db6ac', '#4dd0e1', '#64b5f6', '#9575cd'];
+                const color = COLORS[idx % COLORS.length];
+                return (
                 <Card key={cat.id} className="p-6 hover:border-primary transition-all group border-2 border-transparent">
                    <div className="flex items-center gap-4 mb-4">
-                      <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: cat.color || '#EE4D2D' }} />
+                      <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: color }} />
                       <div className="flex-1">
                          <h4 className="font-black text-text-base uppercase italic leading-none">{cat.name}</h4>
                          <p className="text-[10px] text-text-muted font-bold uppercase mt-1">{items.filter(i => i.categoryId === cat.id).length} itens vinculados</p>
@@ -704,7 +710,8 @@ const ItemsView = ({
                       </Button>
                    </div>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -1297,7 +1304,7 @@ const ReportsView = ({
                   <Sparkles className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black uppercase italic tracking-tighter">O que o Shopito deve analisar?</h3>
+                  <h3 className="text-lg font-black uppercase italic tracking-tighter">O que o Assistente C3 deve analisar?</h3>
                   <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Descreva os detalhes do relatório desejado</p>
                 </div>
               </div>
@@ -1341,12 +1348,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [unities, setUnities] = useState<Unity[]>([]);
+  const [activeUnityId, setActiveUnityId] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return localStorage.getItem('theme') as 'light' | 'dark' || 'light';
   });
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Theme effect
   useEffect(() => {
@@ -1359,7 +1367,7 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'stock' | 'movements' | 'reports'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'stock' | 'movements' | 'units' | 'financial'>('dashboard');
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -1538,6 +1546,126 @@ export default function App() {
     }
   }, [activeTab, items]);
 
+  // --- Registro de Movimentação (com suporte multi-unidade) ---
+  const registerMovement = async (data: {
+    itemId: string;
+    type: 'ENTRADA' | 'SAIDA';
+    quantity: number;
+    lotNumber: string;
+    expirationDate: string;
+    notes?: string;
+  }) => {
+    if (!user || !profile) return;
+
+    const unityIdToUse = activeUnityId || profile.unityId || null;
+    if (!unityIdToUse) {
+      alert('Erro: Nenhuma unidade selecionada. Selecione uma unidade antes de registrar movimentações.');
+      return;
+    }
+
+    try {
+      if (editingMovement) {
+        // --- EDIÇÃO ---
+        // Reverter o efeito antigo no batch
+        if (editingMovement.itemId && editingMovement.lotNumber) {
+          const batchesRef = collection(db, 'batches');
+          const bq = query(batchesRef,
+            where('itemId', '==', editingMovement.itemId),
+            where('lotNumber', '==', editingMovement.lotNumber),
+            where('unityId', '==', unityIdToUse)
+          );
+          const batchSnap = await getDocs(bq);
+          if (!batchSnap.empty) {
+            const bRef = doc(db, 'batches', batchSnap.docs[0].id);
+            const oldQty = batchSnap.docs[0].data().quantity || 0;
+            const revertedQty = editingMovement.type === 'ENTRADA'
+              ? oldQty - editingMovement.quantity
+              : oldQty + editingMovement.quantity;
+            await updateDoc(bRef, { quantity: revertedQty });
+          }
+        }
+        // Reverter o efeito antigo no item
+        const itemRef = doc(db, 'items', editingMovement.itemId);
+        const itemSnap = await getDoc(itemRef);
+        if (itemSnap.exists()) {
+          const iData = itemSnap.data() as InventoryItem;
+          const revertedTotal = editingMovement.type === 'ENTRADA'
+            ? (iData.currentQuantity || 0) - editingMovement.quantity
+            : (iData.currentQuantity || 0) + editingMovement.quantity;
+          await updateDoc(itemRef, { currentQuantity: revertedTotal });
+        }
+        // Apagar o movimento antigo
+        await deleteDoc(doc(db, 'movements', editingMovement.id));
+      }
+
+      // --- NOVO REGISTRO (ou substituição na edição) ---
+      // 1. Buscar ou criar o batch
+      const batchesRef = collection(db, 'batches');
+      const bq = query(batchesRef,
+        where('itemId', '==', data.itemId),
+        where('lotNumber', '==', data.lotNumber),
+        where('unityId', '==', unityIdToUse)
+      );
+      const batchSnap = await getDocs(bq);
+
+      let batchId: string;
+      if (!batchSnap.empty) {
+        // Lote já existe, atualizar quantidade
+        const bRef = doc(db, 'batches', batchSnap.docs[0].id);
+        const existingQty = batchSnap.docs[0].data().quantity || 0;
+        const newBatchQty = data.type === 'ENTRADA'
+          ? existingQty + data.quantity
+          : Math.max(0, existingQty - data.quantity);
+        await updateDoc(bRef, { quantity: newBatchQty });
+        batchId = batchSnap.docs[0].id;
+      } else {
+        // Criar novo lote
+        const newBatch: Omit<Batch, 'id'> = {
+          itemId: data.itemId,
+          lotNumber: data.lotNumber,
+          expirationDate: data.expirationDate,
+          quantity: data.type === 'ENTRADA' ? data.quantity : 0,
+          unityId: unityIdToUse,
+        };
+        const bDocRef = await addDoc(batchesRef, newBatch);
+        batchId = bDocRef.id;
+      }
+
+      // 2. Atualizar quantidade total do item
+      const itemRef = doc(db, 'items', data.itemId);
+      const itemSnap = await getDoc(itemRef);
+      if (itemSnap.exists()) {
+        const iData = itemSnap.data() as InventoryItem;
+        const newTotal = data.type === 'ENTRADA'
+          ? (iData.currentQuantity || 0) + data.quantity
+          : Math.max(0, (iData.currentQuantity || 0) - data.quantity);
+        await updateDoc(itemRef, { currentQuantity: newTotal });
+      }
+
+      // 3. Registrar o documento de movimentação
+      const movementDoc: Omit<Movement, 'id'> = {
+        type: data.type,
+        itemId: data.itemId,
+        batchId,
+        lotNumber: data.lotNumber,
+        quantity: data.quantity,
+        responsibleName: profile.name,
+        responsibleUid: user.uid,
+        timestamp: new Date().toISOString(),
+        notes: data.notes || '',
+        unityId: unityIdToUse,
+      };
+      await addDoc(collection(db, 'movements'), movementDoc);
+
+      setIsMovementModalOpen(false);
+      setEditingMovement(null);
+      setSelectedItemForMovement(null);
+    } catch (e) {
+      console.error('Erro ao registrar movimentação:', e);
+      handleFirestoreError(e, editingMovement ? OperationType.UPDATE : OperationType.WRITE, 'movements');
+    }
+  };
+
   // --- Auth & Data Listeners ---
 
   useEffect(() => {
@@ -1557,10 +1685,15 @@ export default function App() {
             await setDoc(userRef, newProfile).catch(e => handleFirestoreError(e, OperationType.WRITE, 'users'));
             setProfile({ id: u.uid, ...newProfile });
           } else {
-            setProfile({ id: u.uid, ...userSnap.data() as Omit<UserProfile, 'id'> });
+            const pData = userSnap.data() as Omit<UserProfile, 'id'>;
+            setProfile({ id: u.uid, ...pData });
+            if (pData.unityId) {
+              setActiveUnityId(pData.unityId);
+            }
           }
         } else {
           setProfile(null);
+          setActiveUnityId(null);
         }
       } catch (err) {
         console.error("Erro ao carregar perfil do usuário:", err);
@@ -1574,33 +1707,66 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    const unsubCategories = onSnapshot(collection(db, 'categories'), 
+    // Admin listeners (get all unities)
+    const unsubUnities = onSnapshot(collection(db, 'unities'), 
+      (snap) => {
+        const uList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Unity));
+        setUnities(uList);
+        
+        // Se usuário comum e não tem activeUnityId, tenta achar por email
+        if (profile && profile.role !== 'admin' && !activeUnityId) {
+          const userUnity = uList.find(un => un.responsibleEmails.includes(profile.email));
+          if (userUnity) setActiveUnityId(userUnity.id);
+        }
+      },
+      (e) => handleFirestoreError(e, OperationType.LIST, 'unities')
+    );
+
+    // Se não for admin, precisamos do activeUnityId para carregar o resto
+    if (profile?.role !== 'admin' && !activeUnityId) {
+      return () => unsubUnities();
+    }
+
+    // Filtro por unidade
+    const unityFilter = profile?.role === 'admin' && !activeUnityId ? null : activeUnityId;
+    
+    const categoriesRef = collection(db, 'categories');
+    const itemsRef = collection(db, 'items');
+    const movementsRef = collection(db, 'movements');
+    const batchesRef = collection(db, 'batches');
+
+    const unsubCategories = onSnapshot(
+      unityFilter ? query(categoriesRef, where('unityId', '==', unityFilter)) : categoriesRef, 
       (snap) => setCategories(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category))),
       (e) => handleFirestoreError(e, OperationType.LIST, 'categories')
     );
 
-    const unsubItems = onSnapshot(collection(db, 'items'), 
+    const unsubItems = onSnapshot(
+      unityFilter ? query(itemsRef, where('unityId', '==', unityFilter)) : itemsRef, 
       (snap) => setItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InventoryItem))),
       (e) => handleFirestoreError(e, OperationType.LIST, 'items')
     );
 
-    const unsubMovements = onSnapshot(query(collection(db, 'movements'), orderBy('timestamp', 'desc')), 
+    const unsubMovements = onSnapshot(
+      query(movementsRef, ...(unityFilter ? [where('unityId', '==', unityFilter)] : []), orderBy('timestamp', 'desc')), 
       (snap) => setMovements(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Movement)).slice(0, 100)),
       (e) => handleFirestoreError(e, OperationType.LIST, 'movements')
     );
 
-    const unsubBatches = onSnapshot(collection(db, 'batches'), 
+    const unsubBatches = onSnapshot(
+      unityFilter ? query(batchesRef, where('unityId', '==', unityFilter)) : batchesRef, 
       (snap) => setBatches(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Batch))),
       (e) => handleFirestoreError(e, OperationType.LIST, 'batches')
     );
 
     return () => {
+      unsubUnities();
       unsubCategories();
       unsubItems();
       unsubMovements();
       unsubBatches();
     };
-  }, [user]);
+  }, [user, profile, activeUnityId]);
 
   // --- Auth Guard ---
 
@@ -1615,12 +1781,9 @@ export default function App() {
         className="relative"
       >
         <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full scale-150" />
-        <img 
-          src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-          alt="Shopito Mascot"
-          className="w-24 h-24 rounded-full object-cover border-4 border-primary relative z-10 shadow-2xl"
-          referrerPolicy="no-referrer"
-        />
+        <div className="w-24 h-24 rounded-full bg-primary flex items-center justify-center relative z-10 shadow-2xl border-4 border-surface">
+          <Stethoscope className="text-white w-12 h-12" />
+        </div>
       </motion.div>
       <p className="text-text-muted font-black font-sans text-xs tracking-widest uppercase italic animate-pulse">Iniciando Ambulatório Inteligente...</p>
     </div>
@@ -1630,20 +1793,14 @@ export default function App() {
     <div className="min-h-screen bg-bg-main flex items-center justify-center p-4">
       <Card className="max-w-md w-full p-10 text-center space-y-8 bg-surface border-border-base relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
-        <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-4 ring-8 ring-primary/5 p-1 overflow-hidden bg-bg-main shadow-inner">
-          <img 
-            src="https://shopee.com.br/blog/wp-content/uploads/2022/03/Shopito-capa.jpg" 
-            alt="Shopito Mascot"
-            className="w-full h-full rounded-full object-cover"
-            referrerPolicy="no-referrer"
-          />
+        <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-4 ring-8 ring-primary/5 p-1 overflow-hidden bg-primary shadow-inner">
+          <Stethoscope className="text-white w-14 h-14" />
         </div>
         <div>
           <h1 className="text-2xl font-black text-text-base uppercase italic tracking-tight leading-tight">
-            Ambulatório Inteligente <br />
-            <span className="text-primary not-italic">Shopee</span>
+            C3 Ambulatório
           </h1>
-          <p className="text-text-muted mt-2 font-bold text-xs uppercase tracking-widest leading-loose">Bem-vindo ao sistema de gestão, Shopito!</p>
+          <p className="text-text-muted mt-2 font-bold text-xs uppercase tracking-widest leading-loose">Bem-vindo ao sistema de gestão</p>
         </div>
         <form onSubmit={handleCustomLogin} className="space-y-4 text-left w-full">
           {loginError && <p className="text-rose-500 text-xs font-bold text-center bg-rose-500/10 p-2 rounded-sm">{loginError}</p>}
@@ -1665,58 +1822,52 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans selection:bg-primary/20 selection:text-primary">
-      {/* Sidebar Retrátil */}
-      <motion.aside 
-        initial={false}
-        animate={{ width: isSidebarCollapsed ? 80 : 280 }}
-        className="relative bg-surface border-r border-border-base flex flex-col z-20 shadow-2xl"
+      <aside 
+        className="w-[240px] bg-surface border-r border-border-base flex flex-col z-20 shadow-2xl overflow-hidden"
       >
-        <div className="p-6 mb-4 flex items-center justify-between">
-          {!isSidebarCollapsed && (
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center rotate-3 shadow-lg">
-                <Package className="text-white w-6 h-6 -rotate-3" />
-              </div>
-              <div>
-                <h1 className="text-sm font-black uppercase tracking-tighter leading-none italic text-primary">Ambulatório</h1>
-                <h1 className="text-lg font-black uppercase tracking-tighter leading-none italic text-text-base">Shopee</h1>
+        <div className="p-4 mb-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-sm bg-primary flex items-center justify-center rotate-3 shadow-lg shrink-0">
+              <Stethoscope className="text-white w-6 h-6 -rotate-3" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5 mb-0.5">
+                <h1 className="text-xl font-black uppercase tracking-tighter text-primary leading-none">C3</h1>
+                <h1 className="text-[9px] font-black uppercase tracking-widest text-primary/80 leading-none">Ambulatório</h1>
               </div>
             </div>
-          )}
-          {isSidebarCollapsed && (
-             <div className="w-10 h-10 mx-auto rounded-sm bg-primary flex items-center justify-center shadow-lg">
-                <Package className="text-white w-6 h-6" />
-             </div>
-          )}
+          </div>
         </div>
 
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar">
-          {( [
-            { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-            { id: 'items', icon: Package, label: 'Catálogo' },
-            { id: 'stock', icon: ShoppingBag, label: 'Estoque Real' },
-            { id: 'movements', icon: History, label: 'Movimentações' },
-            { id: 'reports', icon: FileText, label: 'Relatórios IA' },
-          ] as const).map(tab => (
+          {(profile?.role === 'admin' 
+            ? [
+              { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+              { id: 'units', icon: Building2, label: 'Unidades' },
+              { id: 'stock', icon: ShoppingBag, label: 'Estoques Geração' },
+              { id: 'financial', icon: DollarSign, label: 'Financeiro' },
+            ]
+            : [
+              { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+              { id: 'items', icon: Package, label: 'Catálogo' },
+              { id: 'stock', icon: ShoppingBag, label: 'Estoque Real' },
+              { id: 'movements', icon: History, label: 'Movimentações' },
+            ]
+          ).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-4 rounded-sm transition-all relative group",
+                "w-full flex items-center gap-3 px-3 py-3.5 rounded-sm transition-all relative group",
                 activeTab === tab.id 
-                  ? "bg-primary text-white shadow-xl shadow-primary/20 translate-x-1" 
+                  ? "bg-primary text-white shadow-xl shadow-primary/20" 
                   : "text-text-muted hover:bg-surface-variant/50 hover:text-text-base"
               )}
             >
-              <tab.icon className={cn("w-5 h-5", activeTab === tab.id ? "animate-pulse" : "")} />
-              {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">{tab.label}</span>}
+              <tab.icon className={cn("w-4 h-4 shrink-0", activeTab === tab.id ? "animate-pulse" : "")} />
+              <span className="text-[10px] font-black uppercase tracking-widest italic truncate">{tab.label}</span>
               {activeTab === tab.id && (
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-l-full" />
-              )}
-              {isSidebarCollapsed && (
-                 <div className="absolute left-full ml-2 px-2 py-1 bg-surface border border-border-base rounded-sm text-[10px] font-bold text-text-base opacity-0 group-hover:opacity-100 pointer-events-none transition-all whitespace-nowrap z-50">
-                    {tab.label}
-                 </div>
               )}
             </button>
           ))}
@@ -1725,46 +1876,69 @@ export default function App() {
         <div className="p-3 border-t border-border-base space-y-1">
           <button
             onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-4 py-4 rounded-sm text-text-muted hover:bg-surface-variant/50 transition-all group relative"
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-sm text-text-muted hover:bg-surface-variant/50 transition-all group relative justify-start"
           >
-            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-            {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">Alternar Tema</span>}
+            {theme === 'light' ? <Moon className="w-4 h-4 shrink-0" /> : <Sun className="w-4 h-4 shrink-0" />}
+            <span className="text-[10px] font-black uppercase tracking-widest italic truncate">Alternar Tema</span>
           </button>
           <button
             onClick={() => signOut(auth)}
-            className="w-full flex items-center gap-3 px-4 py-4 rounded-sm text-text-muted hover:bg-red-500/10 hover:text-red-500 transition-all group relative"
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-sm text-text-muted hover:bg-red-500/10 hover:text-red-500 transition-all group relative justify-start"
           >
-            <LogOut className="w-5 h-5" />
-            {!isSidebarCollapsed && <span className="text-xs font-black uppercase tracking-widest italic">Encerrar Sessão</span>}
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span className="text-[10px] font-black uppercase tracking-widest italic truncate">Encerrar Sessão</span>
           </button>
         </div>
-
-        {/* Botão de Toggle */}
-        <button
-          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-primary text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all z-30"
-        >
-          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </motion.aside>
+      </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-16 border-b border-border-base bg-surface/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary italic">Módulo</p>
-            <h2 className="text-xl font-black italic uppercase tracking-tighter text-text-base leading-none">
+        <header className="h-16 border-b border-border-base bg-surface/80 backdrop-blur-md flex items-center justify-between px-6 shrink-0 relative">
+          <div className="flex flex-col">
+            <p className="text-[8px] font-black uppercase tracking-widest text-primary italic leading-tight">Módulo</p>
+            <h2 className="text-sm font-black italic uppercase tracking-tighter text-text-base leading-none">
               {activeTab === 'dashboard' && 'Visão Geral'}
               {activeTab === 'items' && 'Catálogo'}
               {activeTab === 'stock' && 'Estoque Real'}
               {activeTab === 'movements' && 'Movimentações'}
-              {activeTab === 'reports' && 'Relatórios IA'}
             </h2>
           </div>
+
+          {/* Centro da Navbar */}
+          <div className="absolute left-1/2 -translate-x-1/2 text-center flex flex-col items-center">
+            {profile?.role === 'admin' ? (
+              <select 
+                value={activeUnityId || ''} 
+                onChange={(e) => setActiveUnityId(e.target.value || null)}
+                className="bg-transparent border-none text-center focus:ring-0 cursor-pointer p-0 m-0"
+              >
+                <option value="" className="text-black">VISÃO GLOBAL (C3)</option>
+                {unities.map(u => (
+                  <option key={u.id} value={u.id} className="text-black">{u.name.toUpperCase()} / {u.company.toUpperCase()}</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <h1 className="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-tight">
+                  {unities.find(un => un.id === activeUnityId)?.company || 'SHOPEE'}
+                </h1>
+                <h1 className="text-sm font-black uppercase tracking-tighter text-text-base leading-none italic">
+                  {unities.find(un => un.id === activeUnityId)?.name || 'SOC MG2'}
+                </h1>
+              </>
+            )}
+          </div>
+
+          {/* Usuário e Função */}
           <div className="flex items-center gap-3">
-            <span className="text-sm font-black uppercase italic text-text-base">{profile?.name || 'Usuário'}</span>
-            <div className="w-9 h-9 rounded-sm bg-primary flex items-center justify-center text-white font-black italic">
-              {profile?.name?.charAt(0) || 'S'}
+            <div className="text-right">
+              <p className="text-sm font-black uppercase italic text-text-base leading-none">{profile?.name || 'Natalia'}</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-text-muted">
+                {profile?.role === 'admin' ? 'Admin' : (profile?.role || 'Admin')}
+              </p>
+            </div>
+            <div className="w-8 h-8 rounded-sm bg-primary flex items-center justify-center text-white font-black italic text-sm">
+              {(profile?.name || 'Natalia').charAt(0)}
             </div>
           </div>
         </header>
@@ -1955,6 +2129,12 @@ export default function App() {
           e.preventDefault();
           const form = e.target as HTMLFormElement;
           const name = (form.elements.namedItem('catName') as HTMLInputElement).value;
+          const unityIdToUse = activeUnityId || profile?.unityId || null;
+
+          if (!unityIdToUse) {
+            alert('Selecione uma unidade antes de criar uma categoria.');
+            return;
+          }
           
           try {
             if (editingCategory) {
@@ -1962,7 +2142,7 @@ export default function App() {
               setEditingCategory(null);
               setIsCategoryModalOpen(false);
             } else {
-              await addDoc(collection(db, 'categories'), { name });
+              await addDoc(collection(db, 'categories'), { name, unityId: unityIdToUse });
             }
             form.reset();
           } catch (err) {
@@ -2011,6 +2191,13 @@ export default function App() {
           e.preventDefault();
           const formData = new FormData(e.target as HTMLFormElement);
           const indication = (formData.get('indication') as string).trim();
+          const unityIdToUse = activeUnityId || profile?.unityId || null;
+
+          if (!unityIdToUse && !editingItem) {
+            alert('Selecione uma unidade antes de criar um item.');
+            return;
+          }
+
           const itemData: any = {
              name: formData.get('name') as string,
              categoryId: formData.get('categoryId') as string,
@@ -2026,7 +2213,8 @@ export default function App() {
             } else {
               await addDoc(collection(db, 'items'), {
                 ...itemData,
-                currentQuantity: 0
+                currentQuantity: 0,
+                unityId: unityIdToUse,
               });
             }
           } catch (e) {
