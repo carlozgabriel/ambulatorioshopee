@@ -1,7 +1,7 @@
 import { InventoryItem, Movement, Category } from "../types";
 
 // Configurações do OpenRouter
-const OPENROUTER_KEY = "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";
+const OPENROUTER_KEY = (import.meta as any).env?.VITE_OPENROUTER_API_KEY || "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";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 async function callAI(prompt: string): Promise<string> {
