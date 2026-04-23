@@ -6,7 +6,7 @@ const getApiKey = () => {
   const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
               process.env.VITE_GEMINI_API_KEY ||
               process.env.GEMINI_API_KEY ||
-              "AIzaSyDhO0JFAaB7hGi3Yjz342UFW9PtgkgYvZc"; // Chave fixa de segurança
+              "AIzaSyBN8YS6Ikzeu0UNemJAJ1IkmOEXey9qLYA"; // Atualizada para sua nova chave do print
   
   if (key && key.trim().startsWith("AIza")) {
     console.log("Shopito: Conexão com Google Gemini preparada.");
@@ -17,7 +17,8 @@ const getApiKey = () => {
 };
 
 const API_KEY = getApiKey();
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
 
 
 
