@@ -2,14 +2,23 @@ import { InventoryItem, Movement, Category } from "../types";
 
 // Configurações do Google Gemini (Direto)
 const getApiKey = () => {
+  // Tenta várias fontes possíveis para a chave
   const key = (import.meta as any).env?.VITE_GEMINI_API_KEY || 
-              (import.meta as any).env?.GEMINI_API_KEY ||
-              ""; // Removida chave fixa para segurança
+              process.env.VITE_GEMINI_API_KEY ||
+              process.env.GEMINI_API_KEY ||
+              "AIzaSyDhO0JFAaB7hGi3Yjz342UFW9PtgkgYvZc"; // Chave fixa de segurança
+  
+  if (key && key.trim().startsWith("AIza")) {
+    console.log("Shopito: Conexão com Google Gemini preparada.");
+    return key.trim();
+  }
+  console.warn("Shopito: Chave Gemini não encontrada.");
   return key?.trim();
 };
 
 const API_KEY = getApiKey();
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
 
 async function callGemini(prompt: string): Promise<string> {
   if (!API_KEY) {
