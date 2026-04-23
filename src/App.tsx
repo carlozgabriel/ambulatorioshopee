@@ -1383,6 +1383,35 @@ export default function App() {
         .slice(0, 5);
   }, [movements, items]);
 
+  const stats = useMemo(() => ({
+    totalItems: items.length,
+    lowStock: items.filter(i => (i.currentQuantity || 0) <= (i.minQuantity || 5)).length,
+    expiringSoon: batches.filter(b => {
+      if (!b.expirationDate) return false;
+      const expiry = new Date(b.expirationDate);
+      const today = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(today.getDate() + 30);
+      return expiry > today && expiry <= thirtyDaysFromNow;
+    }).length,
+    recentMovements: movements.filter(m => {
+      const mDate = new Date(m.timestamp);
+      const today = new Date();
+      return mDate.toDateString() === today.toDateString();
+    }).length
+  }), [items, batches, movements]);
+
+  const expiringBatches = useMemo(() => {
+    return batches.filter(b => {
+      if (!b.expirationDate) return false;
+      const expiry = new Date(b.expirationDate);
+      const today = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(today.getDate() + 30);
+      return expiry > today && expiry <= thirtyDaysFromNow;
+    });
+  }, [batches]);
+
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
